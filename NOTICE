@@ -1,0 +1,21 @@
+ksp-hmi
+Copyright 2026 cpuchip
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+krpc/proto/krpc.proto
+  Vendored verbatim (except for one added `option go_package` line) from the
+  kRPC project (https://github.com/krpc/krpc), file protobuf/krpc.proto, retrieved
+  2026-07-19 from the `main` branch. kRPC is licensed under the GNU Lesser General
+  Public License v3.0 (core), with portions under GPLv3. This schema file, and the
+  Go bindings generated from it into krpc/pb/, remain subject to kRPC's license
+  terms; they are not covered by this project's Apache-2.0 license.
+
+  The remainder of this project — the hand-written Go client (krpc/*.go, excluding
+  krpc/pb/) and the ksp-mcp server (cmd/ksp-mcp/) — is original work under
+  Apache-2.0. It communicates with the kRPC game mod only as a network client over
+  kRPC's public TCP protocol, which is not a derivative-work relationship.
