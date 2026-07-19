@@ -1,0 +1,15 @@
+# CAPCOM voice bot — dependencies.
+#
+# Pipecat 1.3.0 with the extras the loop needs: silero VAD, faster-whisper STT,
+# kokoro TTS, the openai LLM client, the webrtc (aiortc) transport, and the runner
+# (which brings the prebuilt browser voice UI + fastapi/uvicorn + python-dotenv).
+# No torch — the stack is onnx + ctranslate2, which keeps the install light. No `mcp`
+# extra: CAPCOM is a dumb pipe; the ksp-mcp tools live in the loom seat, not here.
+pipecat-ai[silero,whisper,kokoro,openai,webrtc,runner]==1.3.0
+
+# CUDA runtime DLLs for GPU speech-to-text on Windows (faster-whisper/ctranslate2).
+# _enable_cuda_dlls() in capcom_bot.py adds these to PATH. Harmless if you run STT on
+# CPU; remove them if you have no NVIDIA GPU and want a smaller install.
+nvidia-cublas-cu12>=12.9.2.10
+nvidia-cuda-runtime-cu12>=12.9.79
+nvidia-cudnn-cu12>=9.23.0.39

@@ -3,6 +3,11 @@
 *.exe
 *.test
 *.out
+# cross-compiled ksp-mcp binaries (build artifacts; the linux one is copied into the
+# capcom seat home — see ~/.stewards/capcom-seat-README.md)
+/ksp-mcp
+/ksp-mcp-linux
+/ksp-mcp-*
 
 # Python
 __pycache__/
