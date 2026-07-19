@@ -109,7 +109,16 @@ func (c *Conn) Orbit(vessel uint64) (*OrbitInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	return c.OrbitElements(orbit)
+}
+
+// OrbitElements reads the orbital elements of any Orbit object (the active
+// vessel's, a target's, or a body's), so the target/transfer tools can read a
+// second orbit without going through a vessel. Angles are converted to degrees;
+// altitudes are above the body's sea level.
+func (c *Conn) OrbitElements(orbit uint64) (*OrbitInfo, error) {
 	oi := &OrbitInfo{}
+	var err error
 	get := func(proc string) (float64, error) {
 		return c.callScalar("SpaceCenter", proc, EncodeObject(orbit))
 	}

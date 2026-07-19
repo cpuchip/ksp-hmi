@@ -277,6 +277,50 @@ func DecodeTuple(b []byte) ([][]byte, error) {
 	return t.Items, nil
 }
 
+// DecodeVector3 decodes a TUPLE(double,double,double) — kRPC's representation of
+// a 3-vector (position, velocity, direction) — into a plain [3]float64. A short
+// or null tuple yields zeros for the missing components rather than an error, so
+// a degenerate reading stays honest instead of failing the whole tool.
+func DecodeVector3(b []byte) ([3]float64, error) {
+	var v [3]float64
+	items, err := DecodeTuple(b)
+	if err != nil {
+		return v, err
+	}
+	for i := 0; i < 3 && i < len(items); i++ {
+		d, err := DecodeDouble(items[i])
+		if err != nil {
+			return v, err
+		}
+		v[i] = d
+	}
+	return v, nil
+}
+
+// DictEntry is one decoded DICTIONARY entry: the raw key and value bytes, each
+// decoded further by the caller with the Decode* helper for its element type.
+type DictEntry struct {
+	Key   []byte
+	Value []byte
+}
+
+// DecodeDictionary decodes a DICTIONARY value (e.g. SpaceCenter.get_Bodies ->
+// dictionary<string, CelestialBody>) into its raw key/value pairs.
+func DecodeDictionary(b []byte) ([]DictEntry, error) {
+	if isNullCollection(b) {
+		return nil, nil
+	}
+	var d pb.Dictionary
+	if err := proto.Unmarshal(b, &d); err != nil {
+		return nil, fmt.Errorf("krpc: decode dictionary: %w", err)
+	}
+	out := make([]DictEntry, 0, len(d.Entries))
+	for _, e := range d.Entries {
+		out = append(out, DictEntry{Key: e.Key, Value: e.Value})
+	}
+	return out, nil
+}
+
 func wireErr(kind string, n int) error {
 	return fmt.Errorf("krpc: decode %s: %w", kind, protowire.ParseError(n))
 }
