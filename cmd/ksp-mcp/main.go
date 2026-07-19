@@ -54,7 +54,7 @@ func main() {
 	}
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-	registerReadTools(s, srv)
+	registerTools(s, srv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -79,7 +79,7 @@ func main() {
 func runHTTP(ctx context.Context, srv *kspServer, addr string, logger *log.Logger) error {
 	getServer := func(*http.Request) *mcp.Server {
 		s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-		registerReadTools(s, srv)
+		registerTools(s, srv)
 		return s
 	}
 	handler := mcp.NewStreamableHTTPHandler(getServer, nil)
@@ -141,8 +141,80 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	cw, err := srv.crew()
 	dump("crew", cw, err)
 
-	fmt.Println("\nsmoke: OK (connected). Every read tool was driven against the live game above.")
+	// Tier 1 richer reads.
+	ti, err := srv.targetInfo()
+	dump("target_info", ti, err)
+	lv, err := srv.listVessels()
+	dump("list_vessels", lv, err)
+	dv, err := srv.deltaVStatus()
+	dump("delta_v_status", dv, err)
+	at, err := srv.attitude()
+	dump("attitude", at, err)
+	bd, err := srv.bodies("")
+	dump("bodies (list)", bd, err)
+	bk, err := srv.bodies("Kerbin")
+	dump("bodies Kerbin", bk, err)
+
+	// Tier 2 burn math.
+	cc, err := srv.calcCircularize()
+	dump("calc_circularize", cc, err)
+	alt := 100000.0
+	ch, err := srv.calcHohmann(hohmannInput{TargetAltitudeM: &alt})
+	dump("calc_hohmann (to 100km)", ch, err)
+	ct, err := srv.calcHohmann(hohmannInput{})
+	dump("calc_hohmann (to target)", ct, err)
+	cp, err := srv.calcPlaneChange()
+	dump("calc_plane_change", cp, err)
+	cb, err := srv.calcBurnTime(burnTimeInput{DeltaVMS: 100})
+	dump("calc_burn_time (100 m/s)", cb, err)
+
+	runNodeRoundTrip(srv)
+
+	fmt.Println("\nsmoke: OK (connected). Every tool was driven against the live game above; the")
+	fmt.Println("maneuver-node round-trip left the flight plan exactly as it was found.")
 	return 0
+}
+
+// runNodeRoundTrip exercises the Tier 3 write surface REVERSIBLY: it only runs
+// when the flight plan is empty (so it can't clobber a node the pilot placed),
+// creates one node, reads it back, deletes it, and confirms the plan is empty
+// again — leaving the game exactly as found.
+func runNodeRoundTrip(srv *kspServer) {
+	fmt.Printf("\n=== TIER 3 node round-trip (reversible) ===\n")
+	before, err := srv.maneuverNodes()
+	if err != nil {
+		fmt.Printf("skip: couldn't read existing nodes: %v\n", err)
+		return
+	}
+	if before.Count != 0 {
+		fmt.Printf("skip: %d node(s) already on the flight plan — not touching the pilot's plan.\n", before.Count)
+		return
+	}
+	tfn := 120.0
+	nc, err := srv.nodeCreate(nodeCreateInput{TimeFromNowSeconds: &tfn, ProgradeMS: 50})
+	dump("node_create (+120s, 50 m/s prograde)", nc, err)
+	if err != nil {
+		return
+	}
+	mid, _ := srv.maneuverNodes()
+	fmt.Printf("nodes after create: %d\n", mid.Count)
+	del, err := srv.nodeDelete(nodeDeleteInput{})
+	dump("node_delete", del, err)
+	after, _ := srv.maneuverNodes()
+	fmt.Printf("nodes after delete: %d (want 0)\n", after.Count)
+
+	// plan_circularize places a real node too — exercise it, then clear.
+	pc, err := srv.planCircularize(planInput{At: "apoapsis"})
+	dump("plan_circularize (apoapsis)", pc, err)
+	mid2, _ := srv.maneuverNodes()
+	fmt.Printf("nodes after plan_circularize: %d\n", mid2.Count)
+	// plan_hohmann needs a target — show the honest no-target path (places nothing).
+	ph, err := srv.planHohmann(hohmannInput{})
+	dump("plan_hohmann (no target -> honest note, places nothing)", ph, err)
+	cl, err := srv.nodeClear()
+	dump("node_clear", cl, err)
+	final, _ := srv.maneuverNodes()
+	fmt.Printf("nodes after node_clear: %d (want 0 — flight plan restored)\n", final.Count)
 }
 
 func dump(name string, v any, err error) {

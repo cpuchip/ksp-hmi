@@ -92,3 +92,59 @@ func TestGracefulDegradationWhenDown(t *testing.T) {
 		t.Errorf("crew degraded wrong: avail=%v err=%v", cw.Available, err)
 	}
 }
+
+// TestNewToolsDegradeWhenDown holds the flight-computer tools (Tier 1/2/3) to the
+// same contract: with kRPC unreachable every one returns a graceful
+// Available:false answer, never a hard error and never a panic. Crucially, the
+// Tier 3 WRITE tools must attempt no game mutation when they can't even connect.
+func TestNewToolsDegradeWhenDown(t *testing.T) {
+	srv := newKSPServer(krpc.DialConfig{
+		Host: "127.0.0.1", RPCPort: 59323, StreamPort: 0, Timeout: 400 * time.Millisecond,
+	})
+	defer srv.Close()
+
+	if o, err := srv.targetInfo(); err != nil || o.Available {
+		t.Errorf("target_info degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.listVessels(); err != nil || o.Available {
+		t.Errorf("list_vessels degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.deltaVStatus(); err != nil || o.Available {
+		t.Errorf("delta_v_status degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.attitude(); err != nil || o.Available {
+		t.Errorf("attitude degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.bodies("Kerbin"); err != nil || o.Available {
+		t.Errorf("bodies degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.calcCircularize(); err != nil || o.Available {
+		t.Errorf("calc_circularize degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.calcHohmann(hohmannInput{}); err != nil || o.Available {
+		t.Errorf("calc_hohmann degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.calcPlaneChange(); err != nil || o.Available {
+		t.Errorf("calc_plane_change degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.calcBurnTime(burnTimeInput{DeltaVMS: 100}); err != nil || o.Available {
+		t.Errorf("calc_burn_time degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	// Tier 3 writes: must degrade, and must not mutate (they never reach a Call).
+	tfn := 60.0
+	if o, err := srv.nodeCreate(nodeCreateInput{TimeFromNowSeconds: &tfn, ProgradeMS: 10}); err != nil || o.Available {
+		t.Errorf("node_create degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.nodeDelete(nodeDeleteInput{}); err != nil || o.Available {
+		t.Errorf("node_delete degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.nodeClear(); err != nil || o.Available {
+		t.Errorf("node_clear degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.planCircularize(planInput{}); err != nil || o.Available {
+		t.Errorf("plan_circularize degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+	if o, err := srv.planHohmann(hohmannInput{}); err != nil || o.Available {
+		t.Errorf("plan_hohmann degraded wrong: avail=%v err=%v", o.Available, err)
+	}
+}

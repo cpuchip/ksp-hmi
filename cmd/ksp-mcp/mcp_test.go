@@ -23,7 +23,7 @@ func TestMCPRoundTrip(t *testing.T) {
 	defer srv.Close()
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-	registerReadTools(s, srv)
+	registerTools(s, srv)
 
 	serverT, clientT := mcp.NewInMemoryTransports()
 	go func() { _ = s.Run(ctx, serverT) }()
@@ -35,14 +35,25 @@ func TestMCPRoundTrip(t *testing.T) {
 	}
 	defer cs.Close()
 
-	// tools/list — all 7 read tools present.
+	// tools/list — the whole surface: 7 original reads + 5 Tier-1 reads +
+	// 4 burn-math + 5 maneuver-node planners = 21 tools, each with a description.
 	lt, err := cs.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
 	want := map[string]bool{
+		// reads
 		"vessel_status": false, "orbit": false, "flight_telemetry": false,
 		"resources": false, "maneuver_nodes": false, "crew": false, "game_state": false,
+		// Tier 1
+		"target_info": false, "list_vessels": false, "delta_v_status": false,
+		"attitude": false, "bodies": false,
+		// Tier 2
+		"calc_circularize": false, "calc_hohmann": false, "calc_plane_change": false,
+		"calc_burn_time": false,
+		// Tier 3 (writes: maneuver nodes only)
+		"node_create": false, "node_delete": false, "node_clear": false,
+		"plan_circularize": false, "plan_hohmann": false,
 	}
 	for _, tl := range lt.Tools {
 		if _, ok := want[tl.Name]; ok {
@@ -57,8 +68,8 @@ func TestMCPRoundTrip(t *testing.T) {
 			t.Errorf("tool %q missing from tools/list", name)
 		}
 	}
-	if len(lt.Tools) != 7 {
-		t.Errorf("tools/list returned %d tools, want 7", len(lt.Tools))
+	if len(lt.Tools) != len(want) {
+		t.Errorf("tools/list returned %d tools, want %d", len(lt.Tools), len(want))
 	}
 
 	// game_state — never an error; structured result reports disconnected.
