@@ -75,11 +75,16 @@ See **RESEARCH.md** for the full field survey with citations and the adopt/borro
 
 ---
 
-## Running `ksp-mcp` (P1 — read-only, built)
+## Running `ksp-mcp` (P2 flight computer — 21 tools, built)
 
-`ksp-mcp` is a Go MCP server that answers questions about a live KSP1 flight over kRPC. **Reads only** —
-it mutates nothing (the confirm-gated command wave is P1.5). Requires KSP 1.12.5 with the **kRPC** mod;
-open the kRPC window in-game and click **Start server** (default ports `50000`/`50001`).
+`ksp-mcp` is a Go MCP server that turns a live KSP1 flight over kRPC into a flight computer the CAPCOM can
+reason with. Requires KSP 1.12.5 with the **kRPC** mod; open the kRPC window in-game and click **Start
+server** (default ports `50000`/`50001`).
+
+**Safety tiers.** Tiers 1–2 (reads + burn math) mutate nothing. Tier 3 (maneuver-node planning) is the only
+write surface and it writes ONLY maneuver nodes — planned burns drawn on the navball, fully reversible; it
+**never** fires an engine, stages, toggles SAS, or time-warps. Tier 4 (flight commands) is the later spoken
+go/no-go wave and is deliberately not built — there is no throttle/stage/SAS/warp call anywhere in the code.
 
 ```bash
 go build ./...                 # build the client + server
@@ -91,9 +96,18 @@ go run ./cmd/ksp-mcp -smoke    # LIVE oracle: connect, discover, drive every too
 calls every tool against the real flight; with the game down it prints exactly how to bring it up and
 exits non-zero.
 
-**Tools:** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads existing
-nodes), `crew`, and `game_state` (the honest "can I even answer" tool — reports whether kRPC is reachable,
-the scene, paused state, and whether a vessel exists; it never errors).
+**Tools (21):**
+
+- **Reads (Tier 1):** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads
+  existing nodes), `crew`, `game_state` (the honest "can I even answer" tool), plus `target_info` (target +
+  relative geometry: distance, closing speed, closest approach, phase angle, relative inclination),
+  `list_vessels` (all craft, nearest first), `delta_v_status` (TWR, thrust, mass, Isp, Δv estimate),
+  `attitude` (offsets from every navball marker), and `bodies` (radius/gravity/SOI/day/atmosphere).
+- **Burn math (Tier 2, pure `astro` package, textbook-tested):** `calc_circularize`, `calc_hohmann`,
+  `calc_plane_change`, `calc_burn_time`.
+- **Maneuver-node planning (Tier 3 — writes, reversible, nodes only):** `node_create`, `node_delete`,
+  `node_clear`, `plan_circularize`, `plan_hohmann`. Each is marked a COMMAND, modifies only the flight plan,
+  and fires nothing.
 
 ### Mounting it as a CAPCOM tool (stdio)
 

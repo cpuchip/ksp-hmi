@@ -114,6 +114,55 @@ CAPCOM experience, but on our local stack, and eventually with real hardware.
 - **Done when:** he flies a full Mun mission by voice, the copilot narrates and go-calls each phase,
   the physical panel lights track the flight, and the AI never takes the stick without his "go."
 
+### P2 status — flight-computer wave built 2026-07-19
+
+The tool surface went from 7 reads to **21 tools** — a real flight computer the CAPCOM can reason with.
+`go build/vet/test -race` all green; textbook unit tests for the math; every tool live-driven against
+the real game (see "P2 LIVE-VERIFIED" below).
+
+Tier 1 — richer reads (read-only):
+- [x] `target_info` — target (vessel/body) + relative geometry: distance, closing speed, closest-approach
+      distance & time, phase angle, relative inclination (kRPC's own conic solver for closest approach).
+- [x] `list_vessels` — every vessel, nearest-first, with type/situation/body/distance.
+- [x] `delta_v_status` — TWR (current + full throttle), thrust, mass/dry mass, Isp, single-stage Δv estimate.
+- [x] `attitude` — pitch/heading/roll + degrees off prograde/retrograde/normal/anti-normal/radial/target.
+- [x] `bodies` — a body's radius, gravity, SOI, day length, μ, atmosphere (the transfer-math facts).
+
+Tier 2 — burn math (pure `astro` package, textbook-tested, no game write):
+- [x] `calc_circularize` — Δv at apoapsis & periapsis (vis-viva).
+- [x] `calc_hohmann` — departure/arrival Δv, transfer time, required phase, and time-to-window vs a target.
+- [x] `calc_plane_change` — Δv to match a target's plane, cheapest at apoapsis.
+- [x] `calc_burn_time` — Δv → burn duration + half-burn lead (rocket equation).
+- [x] Oracle: `astro/astro_test.go` asserts against textbook anchors — Kerbin 100 km circular = 2246 m/s,
+      LEO(200 km)→GEO Hohmann ≈ 2454 + 1478 = 3932 m/s over ~5.26 h. Live `bodies Kerbin` returned μ and
+      radius **identical** to those test constants — the math and the game agree.
+
+Tier 3 — maneuver-node planning (the ONLY writes; reversible; nodes only, **never** fires an engine):
+- [x] `node_create` / `node_delete` / `node_clear` — add/remove nodes (isolated in `krpc/nodes.go`).
+- [x] `plan_circularize` — computes AND places a circularization node; live test produced a 961 m/940 m
+      (near-circular) result orbit.
+- [x] `plan_hohmann` — places the departure node for a transfer to the current target at the next window.
+- [x] Each write tool's description is marked **COMMAND**, states it modifies the flight plan, and that it
+      is reversible and fires nothing.
+
+**Deliberately NOT built (Tier 4 — the later spoken go/no-go wave):** throttle, staging, SAS, time-warp,
+node execution — anything that fires an engine or takes the stick. There is no such call anywhere in the
+codebase; the mutating surface is one small file (`krpc/nodes.go`) that touches only maneuver nodes.
+
+**MechJeb presence verdict — PRESENT, not used (by design).** Discovery shows the **`MechJeb` service is
+loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor` (ExecuteOneNode/ExecuteAllNodes, lead-time,
+auto-warp) and the whole `ManeuverPlanner` operation set — `OperationCircularize`, `OperationTransfer`,
+`OperationInterplanetaryTransfer`, `OperationPlane`, `OperationInclination`, `OperationMoonReturn`,
+`OperationLambert`, `OperationKillRelVel`, and more, each `MakeNode`/`MakeNodes` → `SpaceCenter.Node`. We
+**did not** delegate to it: our native `astro` math is textbook-tested, learns-by-doing, and needs no mod.
+Future option — if we want more robust intercepts/landings, Tier 3+ could call MechJeb's planner to *make*
+nodes, and (only in the Tier 4 command wave, behind the spoken go) its `NodeExecutor` to *fly* them. The
+mod is **not required**; our stack stands alone.
+
+Field note — tool-search: with 21 tools the eager-load cost is ~2.4k tokens of descriptions (~3.5–4k with
+schemas), light enough to keep `ENABLE_TOOL_SEARCH=false` in the seat (which also dodges the known
+ToolSearch indexing bug for `--mcp-config` stdio servers, anthropics/claude-code #40314).
+
 ---
 
 ## Design invariants (hold across all phases)
@@ -135,3 +184,23 @@ Graceful degradation confirmed at Space Center (no vessel) AND full reads in Fli
   for a human to click "Allow". FIX (P1.1): lengthen/config the handshake timeout so
   manual-accept works — matters on machines that don't enable auto-accept (e.g. the
   son's). Auto-accept + localhost is the recommended posture; documented in README.
+
+## P2 LIVE-VERIFIED 2026-07-19
+All **21 tools** driven against the real game via `-smoke` (extended to cover every new
+tool plus a reversible Tier-3 node round-trip). Active vessel during the run was an EVA
+kerbal (Bob) on a sub-orbital hop at Minmus — so some orbital scenarios were degenerate,
+but every tool ran on the real path and returned honest values:
+- **Reads:** `list_vessels` returned 20 real craft (Minmus Rangers Lander, station parts,
+  debris) sorted by distance with correct types/bodies. `bodies Kerbin` returned radius
+  600 000 m, μ 3.5316e12, SOI 84 159 286 m, day 5h59m, 70 km atmosphere — μ and radius
+  **identical** to the astro test constants. `attitude` correctly read the kerbal pointing
+  radial-out (0.1° off). `target_info` honestly reported "no target set."
+- **Math:** `calc_hohmann` to a 100 km Minmus orbit → 71 + 46 = 117 m/s, 36m39s, phase 97°.
+- **Tier 3 (reversible, left the flight plan exactly as found):** `node_create` (+120 s,
+  50 m/s prograde) placed a node and read back the resulting orbit; `node_delete` restored
+  count to 0; `plan_circularize` placed a 119 m/s node whose result orbit was **961 m / 940 m
+  — near-circular** (the math works); `plan_hohmann` with no target honestly placed nothing;
+  `node_clear` wiped the plan back to empty.
+- **Graceful degradation** re-confirmed for all 14 new tools with kRPC down (unit test
+  `TestNewToolsDegradeWhenDown`) — `Available:false`, never a hard error, and the Tier-3
+  writes attempt no mutation when they can't even connect.
