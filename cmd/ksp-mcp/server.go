@@ -103,10 +103,13 @@ func (s *kspServer) resolveVessel() (c *krpc.Conn, vessel uint64, b base, ok boo
 
 type vesselStatusOut struct {
 	base
-	Name       string  `json:"name,omitempty"`
-	Situation  string  `json:"situation,omitempty"`
-	Body       string  `json:"body,omitempty"`
-	METSeconds float64 `json:"met_seconds,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Situation string `json:"situation,omitempty"`
+	Body      string `json:"body,omitempty"`
+	// Numeric telemetry is NOT omitempty: a real zero (MET 0 at prelaunch) must
+	// show, not vanish. When Available is false these read 0 and the base Message
+	// tells the CAPCOM to disregard them.
+	METSeconds float64 `json:"met_seconds"`
 	MET        string  `json:"met,omitempty"`
 }
 
@@ -137,18 +140,20 @@ func (s *kspServer) vesselStatus() (vesselStatusOut, error) {
 
 type orbitOut struct {
 	base
-	Body                 string  `json:"body,omitempty"`
-	ApoapsisAltitudeM    float64 `json:"apoapsis_altitude_m,omitempty"`
-	PeriapsisAltitudeM   float64 `json:"periapsis_altitude_m,omitempty"`
-	Eccentricity         float64 `json:"eccentricity,omitempty"`
-	InclinationDeg       float64 `json:"inclination_deg,omitempty"`
-	PeriodSeconds        float64 `json:"period_seconds,omitempty"`
+	Body string `json:"body,omitempty"`
+	// Numeric orbital elements are NOT omitempty: eccentricity 0 (a perfect
+	// circle) is a real, important reading that must not be dropped.
+	ApoapsisAltitudeM    float64 `json:"apoapsis_altitude_m"`
+	PeriapsisAltitudeM   float64 `json:"periapsis_altitude_m"`
+	Eccentricity         float64 `json:"eccentricity"`
+	InclinationDeg       float64 `json:"inclination_deg"`
+	PeriodSeconds        float64 `json:"period_seconds"`
 	Period               string  `json:"period,omitempty"`
-	TimeToApoapsisSecond float64 `json:"time_to_apoapsis_seconds,omitempty"`
+	TimeToApoapsisSecond float64 `json:"time_to_apoapsis_seconds"`
 	TimeToApoapsis       string  `json:"time_to_apoapsis,omitempty"`
-	TimeToPeriapsisSec   float64 `json:"time_to_periapsis_seconds,omitempty"`
+	TimeToPeriapsisSec   float64 `json:"time_to_periapsis_seconds"`
 	TimeToPeriapsis      string  `json:"time_to_periapsis,omitempty"`
-	SemiMajorAxisM       float64 `json:"semi_major_axis_m,omitempty"`
+	SemiMajorAxisM       float64 `json:"semi_major_axis_m"`
 }
 
 func (s *kspServer) orbit() (orbitOut, error) {
@@ -185,15 +190,17 @@ func (s *kspServer) orbit() (orbitOut, error) {
 
 type flightOut struct {
 	base
-	AltitudeM        float64 `json:"altitude_m,omitempty"`
-	SurfaceAltitudeM float64 `json:"surface_altitude_m,omitempty"`
-	VerticalSpeedMS  float64 `json:"vertical_speed_ms,omitempty"`
-	HorizontalSpeed  float64 `json:"horizontal_speed_ms,omitempty"`
-	GForce           float64 `json:"g_force,omitempty"`
-	Mach             float64 `json:"mach,omitempty"`
-	PitchDeg         float64 `json:"pitch_deg,omitempty"`
-	HeadingDeg       float64 `json:"heading_deg,omitempty"`
-	RollDeg          float64 `json:"roll_deg,omitempty"`
+	// Numeric telemetry is NOT omitempty: zero vertical speed (level flight) and
+	// zero mach (vacuum) are real readings a pilot needs, not "missing".
+	AltitudeM        float64 `json:"altitude_m"`
+	SurfaceAltitudeM float64 `json:"surface_altitude_m"`
+	VerticalSpeedMS  float64 `json:"vertical_speed_ms"`
+	HorizontalSpeed  float64 `json:"horizontal_speed_ms"`
+	GForce           float64 `json:"g_force"`
+	Mach             float64 `json:"mach"`
+	PitchDeg         float64 `json:"pitch_deg"`
+	HeadingDeg       float64 `json:"heading_deg"`
+	RollDeg          float64 `json:"roll_deg"`
 }
 
 func (s *kspServer) flightTelemetry() (flightOut, error) {
@@ -236,7 +243,7 @@ type resourcesOut struct {
 	base
 	Total       []resourceOut `json:"total,omitempty"`
 	Stage       []resourceOut `json:"stage,omitempty"`
-	StageNumber int32         `json:"stage_number,omitempty"`
+	StageNumber int32         `json:"stage_number"` // not omitempty: stage 0 (the final stage) is real
 	Note        string        `json:"note,omitempty"`
 }
 
