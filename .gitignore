@@ -1,0 +1,23 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local KSP/mod artifacts, saves, captures (never commit)
+/artifacts/
+/screenshots/
+*.craft
+*.sfs
