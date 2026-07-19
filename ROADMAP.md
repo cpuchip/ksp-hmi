@@ -56,6 +56,39 @@ copilot tool surface we own, that composes with loom and our MCP tooling.
 - **License:** Michael's own client → Apache-2.0 or MIT (a network client of the LGPL/GPL kRPC mod is
   not a derivative work). Public repo.
 
+### P1 status — reads wave built 2026-07-19
+
+Backend chosen: **kRPC protobuf/TCP** (the real build). Telemachus HTTP/JSON stays documented as the
+fallback backend but is not implemented.
+
+Done — unit + MCP-protocol oracles green (`go build/vet/test -race`, all pass):
+
+- [x] Go kRPC client (`krpc/`): RPC + stream handshakes, length-prefixed `Request`/`Response`,
+      argument + return-value serialization, `KRPC.GetServices` self-discovery, stream subscriptions.
+- [x] Wire codec verified **byte-for-byte** against kRPC's own reference client test vectors
+      (goldens in `krpc/wire_test.go`); handshake/call/discovery/stream exercised against an
+      in-process fake kRPC server (`krpc/client_test.go`, `krpc/stream_test.go`).
+- [x] Return values decoded by their **declared** type from discovery (no float-vs-double guessing);
+      enums resolved to names version-robustly.
+- [x] `ksp-mcp` (`cmd/ksp-mcp/`): 7 read-only tools — `vessel_status`, `orbit`, `flight_telemetry`,
+      `resources`, `maneuver_nodes` (reads existing nodes only), `crew`, `game_state`.
+- [x] stdio transport (primary) + optional `-http` Streamable HTTP; graceful degradation when kRPC is
+      down or not in flight (structured `available:false` + spoken message, never a hard error).
+- [x] Full MCP round-trip verified through the real SDK (in-memory client + live stdio probe): 7 tools
+      listed, `game_state`/`vessel_status` return graceful structured results.
+- [x] Licensed Apache-2.0 (`LICENSE` + `NOTICE`); vendored `krpc.proto` kept under kRPC's terms.
+
+Live-verify **pending** (needs KSP running with the kRPC server started):
+
+- [ ] `go run ./cmd/ksp-mcp -smoke` — the standing live oracle. Connects, runs `GetServices` discovery,
+      and drives **every** tool against the live game, printing the real outputs. Exits 1 with the exact
+      bring-it-up instruction while kRPC is down (verified), 0 once it connects.
+
+Deliberately **not** in this wave (reads-only ruling): command/confirm-gate tools
+(`set_throttle`/`set_sas`/`stage`/`execute_node`), MechJeb planners, and the docs tool. The client's
+`Call` layer + `Encode*` argument helpers and the `registerReadTools` registry are shaped so the gated
+command wave slots in as a sibling `registerCommandTools` with no reshaping.
+
 ---
 
 ## P2 — The mission copilot: CAPCOM persona, loom seat, and physical panels

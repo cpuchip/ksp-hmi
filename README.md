@@ -72,3 +72,46 @@ it's the whole pedagogy. The AI is the co-pilot; the kid is the commander.
 
 See **RESEARCH.md** for the full field survey with citations and the adopt/borrow/build verdicts, and
 **ROADMAP.md** for the P0/P1/P2 plan.
+
+---
+
+## Running `ksp-mcp` (P1 — read-only, built)
+
+`ksp-mcp` is a Go MCP server that answers questions about a live KSP1 flight over kRPC. **Reads only** —
+it mutates nothing (the confirm-gated command wave is P1.5). Requires KSP 1.12.5 with the **kRPC** mod;
+open the kRPC window in-game and click **Start server** (default ports `50000`/`50001`).
+
+```bash
+go build ./...                 # build the client + server
+go test ./...                  # unit + MCP-protocol oracles (no game needed)
+go run ./cmd/ksp-mcp -smoke    # LIVE oracle: connect, discover, drive every tool, print outputs
+```
+
+`-smoke` is the standing live check: with the game up it connects, runs `KRPC.GetServices` discovery, and
+calls every tool against the real flight; with the game down it prints exactly how to bring it up and
+exits non-zero.
+
+**Tools:** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads existing
+nodes), `crew`, and `game_state` (the honest "can I even answer" tool — reports whether kRPC is reachable,
+the scene, paused state, and whether a vessel exists; it never errors).
+
+### Mounting it as a CAPCOM tool (stdio)
+
+Build a binary (`go build -o ksp-mcp.exe ./cmd/ksp-mcp`) and register it with any MCP harness. For Claude
+Code / the voice mind, in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ksp": {
+      "type": "stdio",
+      "command": "C:/path/to/ksp-hmi/ksp-mcp.exe",
+      "args": []
+    }
+  }
+}
+```
+
+Flags: `-host` / `-rpc-port` / `-stream-port` target a non-default kRPC server; `-http 127.0.0.1:7801`
+serves Streamable HTTP on `/mcp` instead of stdio (for a harness that mounts over HTTP). All logging is on
+stderr, so the stdio protocol stream stays clean.
