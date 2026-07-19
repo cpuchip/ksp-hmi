@@ -125,3 +125,13 @@ CAPCOM experience, but on our local stack, and eventually with real hardware.
   opt-in per phase, loosened only with his buy-in. This is pedagogy, not just safety.
 - **Build the oracle first.** Every autonomous maneuver gets a deterministic check before it's trusted.
 - **Reuse our own stack** (ai-hmi-jumpstart, loom, llama-chip, space-center) over rebuilding.
+
+## P1 LIVE-VERIFIED 2026-07-19
+All 7 read tools driven against a real flight (Minmus Rangers, orbiting Minmus,
+crew of 5, MET 6d18h). Discovery: 10 services / 1866 procedures / 49 enums.
+Graceful degradation confirmed at Space Center (no vessel) AND full reads in Flight.
+- **Field note — client-accept:** kRPC holds a new connection awaiting in-game approval
+  unless "Auto-accept new clients" is checked; our handshake read timeout was too short
+  for a human to click "Allow". FIX (P1.1): lengthen/config the handshake timeout so
+  manual-accept works — matters on machines that don't enable auto-accept (e.g. the
+  son's). Auto-accept + localhost is the recommended posture; documented in README.
