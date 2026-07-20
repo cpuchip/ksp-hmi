@@ -128,6 +128,19 @@ Tier 1 — richer reads (read-only):
 - [x] `attitude` — pitch/heading/roll + degrees off prograde/retrograde/normal/anti-normal/radial/target.
 - [x] `bodies` — a body's radius, gravity, SOI, day length, μ, atmosphere (the transfer-math facts).
 
+Preflight — go/no-go checklist + staging inspector (read-only; part-tree reads):
+- [x] `preflight` — a spoken checklist + verdict (GO / GO WITH NOTES / NO-GO) over crew, power, engines,
+      parachutes, staging, and a single-stage Δv/TWR floor. Flags only high-confidence problems (empty
+      power, a chute already deployed pre-launch, a crewed craft with no chutes) and reports the rest as
+      facts — no unverifiable "is the staging sensible" guessing.
+- [x] `staging_plan` — groups engines/decouplers/parachutes by activation stage (top stage first, KSP's
+      firing order); surfaces parts set to fire manually/by action group separately so none are hidden.
+- [x] Oracle: the verdict rules (`evaluatePreflight`) and stage grouping (`buildStagingPlan`) are pure
+      functions with unit tests (`cmd/ksp-mcp/preflight_test.go`); the kRPC part reads are best-effort per
+      category (a wrong procedure name degrades one field/section, never the whole snapshot).
+      **kRPC procedure names authored against the kRPC 0.5.4 docs; pending live `-smoke` confirmation on a
+      running craft (added while the game was off) — see the P2 verification note.**
+
 Tier 2 — burn math (pure `astro` package, textbook-tested, no game write):
 - [x] `calc_circularize` — Δv at apoapsis & periapsis (vis-viva).
 - [x] `calc_hohmann` — departure/arrival Δv, transfer time, required phase, and time-to-window vs a target.
@@ -159,7 +172,7 @@ this to *make* nodes for real intercepts/rendezvous; the native `astro` math sta
 mod-free teaching path and fallback. MechJeb's `NodeExecutor` (to *fly* the nodes) is **still deferred** to
 the future Tier 4 command wave, behind the spoken go/no-go — placing a node never fires anything.
 
-Field note — tool-search: with 28 tools the eager-load cost is ~3.3k tokens of descriptions (~5k with
+Field note — tool-search: with 30 tools the eager-load cost is ~3.5k tokens of descriptions (~5k with
 schemas), light enough to keep `ENABLE_TOOL_SEARCH=false` in the seat (which also dodges the known
 ToolSearch indexing bug for `--mcp-config` stdio servers, anthropics/claude-code #40314).
 

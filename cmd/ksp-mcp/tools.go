@@ -110,6 +110,40 @@ func registerReadTools(s *mcp.Server, srv *kspServer) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "preflight",
+		Description: "Run a go/no-go PREFLIGHT CHECK on the active vessel and return a spoken-friendly " +
+			"checklist plus an overall verdict (GO, GO WITH NOTES, or NO-GO). Reads the part tree and " +
+			"telemetry — crew aboard, electric charge, engines (present / firing), parachutes (present, " +
+			"armed, already-deployed), part count and current stage, and a single-stage delta-v/TWR floor. " +
+			"Flags high-confidence problems (empty power, a parachute already deployed before launch, a " +
+			"crewed craft with no parachutes) and reports the rest as facts for the pilot to judge. Use when " +
+			"the pilot asks \"run preflight\", \"are we good to launch\", \"do we have parachutes\", \"check " +
+			"my staging\", or before any launch. Reads only — it never stages, fires, or arms anything.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, preflightOut, error) {
+		out, err := srv.preflight()
+		if err != nil {
+			return toolError("preflight: %v", err), preflightOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "staging_plan",
+		Description: "Report the vessel's STAGING SEQUENCE: for each stage (highest number first, the order " +
+			"KSP fires them) which engines ignite, which decouplers/separators fire, and which parachutes " +
+			"deploy — plus the current stage, total part count, and any parts activated manually / by action " +
+			"group rather than by staging. Use when the pilot asks \"walk me through my staging\", \"what " +
+			"happens when I stage\", \"what's in the next stage\", or \"is my staging set up right\". Reads " +
+			"only — describes the plan, never triggers it.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, stagingPlanOut, error) {
+		out, err := srv.stagingPlan()
+		if err != nil {
+			return toolError("staging_plan: %v", err), stagingPlanOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "game_state",
 		Description: "The honest \"can I even answer\" tool. Report whether kRPC is reachable, the kRPC " +
 			"server version, the current game scene (Flight, SpaceCenter, TrackingStation, EditorVAB, " +

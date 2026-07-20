@@ -192,9 +192,9 @@ The seat is defined by a small **home directory** — reproduce it generically l
      host, set the tool's args to `["-host", "host.docker.internal"]` (see §5); if the
      seat runs on the same host as KSP, no `-host` is needed.
    - **`settings.json`** — set `env.ENABLE_TOOL_SEARCH` to `"false"`. This is
-     load-bearing: it keeps the ~28 ksp tools eagerly loaded instead of deferred behind a
+     load-bearing: it keeps the ~30 ksp tools eagerly loaded instead of deferred behind a
      ToolSearch that doesn't index `--mcp-config` stdio servers on current Claude Code.
-     The 28 tool descriptions cost only ~3–5k tokens, so eager-load is cheap.
+     The 30 tool descriptions cost only ~3–5k tokens, so eager-load is cheap.
 2. Run `loom serve` configured to resolve this home for a role (e.g. `capcom`), then point
    `voice/.env` at it: `CAPCOM_LLM_BASE_URL=http://<loom-host>:7791/v1`,
    `CAPCOM_LLM_MODEL=sonnet#capcom`, `CAPCOM_STICKY=sticky:capcom`, and the token file

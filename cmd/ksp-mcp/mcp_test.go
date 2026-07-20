@@ -35,9 +35,9 @@ func TestMCPRoundTrip(t *testing.T) {
 	}
 	defer cs.Close()
 
-	// tools/list — the whole surface: 7 original reads + 5 Tier-1 reads +
-	// 4 burn-math + 5 native maneuver-node planners + 7 MechJeb-backed planners =
-	// 28 tools, each with a description.
+	// tools/list — the whole surface: 7 original reads + 2 preflight reads +
+	// 5 Tier-1 reads + 4 burn-math + 5 native maneuver-node planners +
+	// 7 MechJeb-backed planners = 30 tools, each with a description.
 	lt, err := cs.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
@@ -46,6 +46,8 @@ func TestMCPRoundTrip(t *testing.T) {
 		// reads
 		"vessel_status": false, "orbit": false, "flight_telemetry": false,
 		"resources": false, "maneuver_nodes": false, "crew": false, "game_state": false,
+		// preflight checklist + staging inspector (reads only)
+		"preflight": false, "staging_plan": false,
 		// Tier 1
 		"target_info": false, "list_vessels": false, "delta_v_status": false,
 		"attitude": false, "bodies": false,

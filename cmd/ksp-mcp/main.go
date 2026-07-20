@@ -141,6 +141,12 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	cw, err := srv.crew()
 	dump("crew", cw, err)
 
+	// Preflight checklist + staging inspector (reads only).
+	pf, err := srv.preflight()
+	dump("preflight", pf, err)
+	sp, err := srv.stagingPlan()
+	dump("staging_plan", sp, err)
+
 	// Tier 1 richer reads.
 	ti, err := srv.targetInfo()
 	dump("target_info", ti, err)

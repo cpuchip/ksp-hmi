@@ -80,7 +80,7 @@ See **RESEARCH.md** for the full field survey with citations and the adopt/borro
 
 ---
 
-## Running `ksp-mcp` (P2 flight computer — 28 tools, built)
+## Running `ksp-mcp` (P2 flight computer — 30 tools, built)
 
 `ksp-mcp` is a Go MCP server that turns a live KSP1 flight over kRPC into a flight computer the CAPCOM can
 reason with. Requires KSP 1.12.5 with the **kRPC** mod; open the kRPC window in-game and click **Start
@@ -103,13 +103,17 @@ go run ./cmd/ksp-mcp -smoke    # LIVE oracle: connect, discover, drive every too
 calls every tool against the real flight; with the game down it prints exactly how to bring it up and
 exits non-zero.
 
-**Tools (28):**
+**Tools (30):**
 
 - **Reads (Tier 1):** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads
   existing nodes), `crew`, `game_state` (the honest "can I even answer" tool), plus `target_info` (target +
   relative geometry: distance, closing speed, closest approach, phase angle, relative inclination),
   `list_vessels` (all craft, nearest first), `delta_v_status` (TWR, thrust, mass, Isp, Δv estimate),
   `attitude` (offsets from every navball marker), and `bodies` (radius/gravity/SOI/day/atmosphere).
+- **Preflight (reads):** `preflight` (a go/no-go checklist + verdict over crew, power, engines, parachutes,
+  staging, and a Δv floor — flags only high-confidence problems, reports the rest as facts) and
+  `staging_plan` (the staging sequence, top stage first: which engines light, decouplers fire, and chutes
+  deploy at each stage). Reads the part tree; mutates nothing.
 - **Burn math (Tier 2, pure `astro` package, textbook-tested):** `calc_circularize`, `calc_hohmann`,
   `calc_plane_change`, `calc_burn_time`.
 - **Native maneuver-node planning (Tier 3 — writes, reversible, nodes only):** `node_create`, `node_delete`,
