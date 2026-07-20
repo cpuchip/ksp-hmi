@@ -36,8 +36,8 @@ func TestMCPRoundTrip(t *testing.T) {
 	defer cs.Close()
 
 	// tools/list — the whole surface: 7 original reads + 2 preflight reads +
-	// 5 Tier-1 reads + 4 burn-math + 5 native maneuver-node planners +
-	// 7 MechJeb-backed planners = 30 tools, each with a description.
+	// 5 Tier-1 reads + 4 burn-math + 1 ascent planner + 5 native maneuver-node
+	// planners + 7 MechJeb-backed planners = 31 tools, each with a description.
 	lt, err := cs.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
@@ -54,6 +54,8 @@ func TestMCPRoundTrip(t *testing.T) {
 		// Tier 2
 		"calc_circularize": false, "calc_hohmann": false, "calc_plane_change": false,
 		"calc_burn_time": false,
+		// ascent planner (plans/validates/reads back only — flies nothing)
+		"plan_ascent": false,
 		// Tier 3 native (writes: maneuver nodes only)
 		"node_create": false, "node_delete": false, "node_clear": false,
 		"plan_circularize": false, "plan_hohmann": false,

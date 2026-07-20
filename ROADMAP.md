@@ -158,9 +158,26 @@ Tier 3 — maneuver-node planning (the ONLY writes; reversible; nodes only, **ne
 - [x] Each write tool's description is marked **COMMAND**, states it modifies the flight plan, and that it
       is reversible and fires nothing.
 
-**Deliberately NOT built (Tier 4 — the later spoken go/no-go wave):** throttle, staging, SAS, time-warp,
-node execution — anything that fires an engine or takes the stick. There is no such call anywhere in the
-codebase; the mutating surface is one small file (`krpc/nodes.go`) that touches only maneuver nodes.
+**Tier 4 — flight commands (the spoken go/no-go wave): BRAIN built (Phase 1), controls NOT wired (Phase 2).**
+Nothing in the codebase writes throttle/stage/SAS/warp/execute to a live vessel; the only live mutating
+surface is still `krpc/nodes.go` (maneuver nodes). What DOES exist is the deterministic flight-program
+executor (`autopilot/`, pure, sim-tested — see the Autopilot section) and `plan_ascent` (authors + validates
++ reads back a program, flies nothing). Phase 2 = wire the executor's `Control` outputs to real kRPC controls
+behind an arm/execute/abort gate — needs the game and Michael's explicit go.
+
+Autopilot — the fast-loop flight-program executor (Phase 1: brain built, fires nothing):
+- [x] `autopilot` package: `Step(program, telemetry, state) → control` — a PURE state machine (gravity-turn
+      pitch schedule + auto-stage + apoapsis cutoff = the "simple AI"), no kRPC dependency. The two-timescale
+      design: CAPCOM (slow LLM loop) authors the program; the executor (fast loop) flies it, no LLM in the loop.
+- [x] Bounded vocabulary (phases + typed conditions + small guidance grammar — not arbitrary code) with
+      `Validate` enforcing throttle∈[0,1], a mandatory dead-man timeout, and a terminal condition per phase.
+- [x] `plan_ascent` MCP tool: builds/validates/describes a launch-to-orbit program (liftoff → gravity turn →
+      auto-stage → cutoff at target apoapsis). Plans only — needs no game, writes nothing.
+- [x] Oracle: `TestSimFliesAscent` flies a toy kinematic rocket entirely by `Step` and asserts liftoff,
+      auto-stage on booster burnout, and cutoff at the target apoapsis — flight logic proven before any wiring.
+- [ ] **Phase 2 (gated, needs game + Michael's go):** a runner that loops `Step` against live telemetry
+      (kRPC streams for low latency) and applies `Control` to throttle/stage/autopilot; arm/execute/abort/
+      status tools; the spoken go/no-go arm gate; circularization as an executor phase (execute the node).
 
 **MechJeb presence verdict — PRESENT; now WIRED for node-making (Tier 3), executor still deferred (Tier 4).**
 Discovery shows the **`MechJeb` service is loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor`
@@ -172,7 +189,7 @@ this to *make* nodes for real intercepts/rendezvous; the native `astro` math sta
 mod-free teaching path and fallback. MechJeb's `NodeExecutor` (to *fly* the nodes) is **still deferred** to
 the future Tier 4 command wave, behind the spoken go/no-go — placing a node never fires anything.
 
-Field note — tool-search: with 30 tools the eager-load cost is ~3.5k tokens of descriptions (~5k with
+Field note — tool-search: with 31 tools the eager-load cost is ~3.6k tokens of descriptions (~5k with
 schemas), light enough to keep `ENABLE_TOOL_SEARCH=false` in the seat (which also dodges the known
 ToolSearch indexing bug for `--mcp-config` stdio servers, anthropics/claude-code #40314).
 

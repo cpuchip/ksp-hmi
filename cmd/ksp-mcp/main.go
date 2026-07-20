@@ -147,6 +147,10 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	sp, err := srv.stagingPlan()
 	dump("staging_plan", sp, err)
 
+	// Ascent autopilot PLANNING (authors + validates + reads back; flies nothing).
+	pa := srv.planAscent(ascentInput{TargetApoapsisM: 80000})
+	dump("plan_ascent (80km)", pa, nil)
+
 	// Tier 1 richer reads.
 	ti, err := srv.targetInfo()
 	dump("target_info", ti, err)

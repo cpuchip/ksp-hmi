@@ -144,6 +144,19 @@ func registerReadTools(s *mcp.Server, srv *kspServer) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_ascent",
+		Description: "PLAN a launch-to-orbit ascent: author a flight program (liftoff, gravity turn, auto-stage, " +
+			"engine cutoff at a target apoapsis) and get it back validated with a spoken read-back you give the " +
+			"crew. Set `target_apoapsis_m` (e.g. 80000 for an 80 km orbit); heading, turn-start/end altitude, and " +
+			"a dead-man timeout are optional. Use when the crew asks you to \"plan the ascent\", \"set up a launch " +
+			"to N km\", or \"how would you fly us up.\" IMPORTANT: this PLANS and describes only — it does NOT arm " +
+			"or fly anything, and there is no tool that flies it yet. Read the plan back, then tell the crew flying " +
+			"it is a future capability behind their spoken go. Circularization is a separate burn, not part of this.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ascentInput) (*mcp.CallToolResult, ascentOut, error) {
+		return nil, srv.planAscent(in), nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "game_state",
 		Description: "The honest \"can I even answer\" tool. Report whether kRPC is reachable, the kRPC " +
 			"server version, the current game scene (Flight, SpaceCenter, TrackingStation, EditorVAB, " +

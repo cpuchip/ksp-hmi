@@ -80,7 +80,7 @@ See **RESEARCH.md** for the full field survey with citations and the adopt/borro
 
 ---
 
-## Running `ksp-mcp` (P2 flight computer — 30 tools, built)
+## Running `ksp-mcp` (P2 flight computer — 31 tools, built)
 
 `ksp-mcp` is a Go MCP server that turns a live KSP1 flight over kRPC into a flight computer the CAPCOM can
 reason with. Requires KSP 1.12.5 with the **kRPC** mod; open the kRPC window in-game and click **Start
@@ -90,8 +90,10 @@ server** (default ports `50000`/`50001`).
 native planners and the MechJeb-backed intercept/rendezvous planners) is the only write surface and it writes
 ONLY maneuver nodes — planned burns drawn on the navball, fully reversible; it **never** fires an engine,
 stages, toggles SAS, or time-warps. Tier 4 (flight commands, incl. MechJeb's NodeExecutor "go for the burn")
-is the later spoken go/no-go wave and is deliberately not built — there is no throttle/stage/SAS/warp/execute
-call anywhere in the code.
+is the later spoken go/no-go wave and is deliberately not wired to the controls — there is no throttle/stage/
+SAS/warp/execute call against a live vessel anywhere in the code. Its *brain* exists as a pure, sim-tested
+executor (see the autopilot note below); `plan_ascent` lets CAPCOM author and read back a flight program, but
+nothing flies it yet.
 
 ```bash
 go build ./...                 # build the client + server
@@ -103,7 +105,7 @@ go run ./cmd/ksp-mcp -smoke    # LIVE oracle: connect, discover, drive every too
 calls every tool against the real flight; with the game down it prints exactly how to bring it up and
 exits non-zero.
 
-**Tools (30):**
+**Tools (31):**
 
 - **Reads (Tier 1):** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads
   existing nodes), `crew`, `game_state` (the honest "can I even answer" tool), plus `target_info` (target +
@@ -116,6 +118,10 @@ exits non-zero.
   deploy at each stage). Reads the part tree; mutates nothing.
 - **Burn math (Tier 2, pure `astro` package, textbook-tested):** `calc_circularize`, `calc_hohmann`,
   `calc_plane_change`, `calc_burn_time`.
+- **Ascent planning (plans only — flies nothing):** `plan_ascent` authors a launch-to-orbit flight program
+  (liftoff → gravity turn → auto-stage → cutoff at a target apoapsis), validates it against the safety
+  invariants, and returns a spoken read-back. It does NOT arm or fly the program — that is the gated Tier-4
+  wave. See the autopilot note.
 - **Native maneuver-node planning (Tier 3 — writes, reversible, nodes only):** `node_create`, `node_delete`,
   `node_clear`, `plan_circularize`, `plan_hohmann`. Each is marked a COMMAND, modifies only the flight plan,
   and fires nothing.
@@ -126,6 +132,25 @@ exits non-zero.
   or present but its version doesn't match the installed MechJeb2 (see below) — `plan_intercept` falls back to
   the native Hohmann transfer and the rest return an honest "needs a compatible MechJeb" answer. They never
   crash and never fabricate.
+
+### Autopilot (Phase 1 — the flight-program brain, built; flying is Phase 2)
+
+The insight behind the autopilot: an LLM turn is too slow for a control loop (seconds), but a launch needs
+millisecond reactions. So CAPCOM (the slow loop) *authors* a bounded flight program, and a deterministic
+**executor** (the fast loop) flies it — no LLM in the loop. The `autopilot` package is that executor as a
+**pure function**: `Step(program, telemetry, state) → control`. The "simple AI" is a state machine plus a
+gravity-turn pitch schedule plus auto-stage and apoapsis-cutoff logic.
+
+- **Bounded, not arbitrary code.** A `Program` is a validated list of phases with typed conditions and a
+  small guidance grammar. CAPCOM composes known-safe primitives; it cannot express anything else.
+- **Validated before it could ever arm:** throttle clamped to [0,1], a **mandatory dead-man timeout**, and a
+  terminal condition on every phase so nothing runs forever (`autopilot.Validate`).
+- **Proven by a sim oracle:** `TestSimFliesAscent` flies a toy kinematic rocket entirely by `Step` and
+  asserts it lifts off, auto-stages when the booster runs dry, and cuts at the target apoapsis — the flight
+  logic is verified before it is ever connected to a live throttle.
+- **Phase 2 (not built, needs the game + your go):** wire `Control` outputs to real kRPC writes
+  (throttle/stage/autopilot), add arm/execute/abort/status tools and the go/no-go gate. Nothing in the repo
+  writes a control to a live vessel today.
 
 ### MechJeb version compatibility (matters for the real planner path)
 
