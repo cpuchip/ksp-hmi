@@ -6,6 +6,11 @@
 > platform. KSP2 development ended in 2024 — see RESEARCH.md for that context. This project does not
 > target KSP2.
 
+> **Getting started?** [**SETUP.md**](SETUP.md) is the front door — a fresh-machine path from
+> installing the KSP mods to talking to CAPCOM, honest about what each tier needs. Start there.
+> The simplest working setup (text CAPCOM in Claude Code / Claude Desktop, no voice stack) is a
+> couple of minutes past the one build.
+
 ---
 
 ## The one-page vision

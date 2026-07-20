@@ -1,0 +1,10 @@
+{
+  "_comment": "Template for mounting ksp-mcp as a stdio MCP server. Copy this to .mcp.json (Claude Code) or fold the 'ksp' entry into claude_desktop_config.json (Claude Desktop), then set 'command' to the ABSOLUTE path of the ksp-mcp binary you built (Windows: ksp-mcp.exe, forward slashes are fine). Leave 'args' empty when the mind runs on the SAME machine as KSP (kRPC is reached on localhost:50000). If the mind runs in a container or on another host, add the target: \"args\": [\"-host\", \"host.docker.internal\"] for a container, or \"args\": [\"-host\", \"192.168.x.y\"] for a LAN box. See SETUP.md.",
+  "mcpServers": {
+    "ksp": {
+      "type": "stdio",
+      "command": "/absolute/path/to/ksp-hmi/ksp-mcp",
+      "args": []
+    }
+  }
+}
