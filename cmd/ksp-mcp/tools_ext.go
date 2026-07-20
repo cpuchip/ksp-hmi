@@ -11,10 +11,11 @@ import (
 // the only writes — reversible, nodes only). main.go (stdio) and the HTTP handler
 // both call this so every transport exposes the same tools.
 func registerTools(s *mcp.Server, srv *kspServer) {
-	registerReadTools(s, srv)  // 7 original reads
-	registerTier1Reads(s, srv) // 5 flight-computer reads
-	registerMathTools(s, srv)  // 4 burn-math tools
-	registerNodeTools(s, srv)  // 5 maneuver-node planners (writes, reversible)
+	registerReadTools(s, srv)    // 7 original reads
+	registerTier1Reads(s, srv)   // 5 flight-computer reads
+	registerMathTools(s, srv)    // 4 burn-math tools
+	registerNodeTools(s, srv)    // 5 native maneuver-node planners (writes, reversible)
+	registerMechJebTools(s, srv) // 7 MechJeb-backed planners (writes, reversible, nodes only)
 }
 
 // registerTier1Reads adds the richer read-only tools of the flight-computer wave.
@@ -233,6 +234,124 @@ func registerNodeTools(s *mcp.Server, srv *kspServer) {
 		out, err := srv.planHohmann(in)
 		if err != nil {
 			return toolError("plan_hohmann: %v", err), planHohmannOut{}, nil
+		}
+		return nil, out, nil
+	})
+}
+
+// registerMechJebTools adds the MechJeb-backed planners: professional intercept,
+// rendezvous, ejection, and return planning via KRPC.MechJeb's ManeuverPlanner. Like
+// the native planners these ONLY place maneuver nodes (reversible; never fire an
+// engine, never touch MechJeb's autopilot/NodeExecutor). Each checks whether MechJeb
+// is present AND functional on this install; when it isn't, it falls back to the
+// native math where one exists (plan_intercept -> native Hohmann) or returns an
+// honest "needs MechJeb" answer — it never crashes and never fabricates.
+func registerMechJebTools(s *mcp.Server, srv *kspServer) {
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_intercept",
+		Description: "COMMAND (modifies the flight plan, reversible): plan an INTERCEPT to the current target and " +
+			"place the transfer node(s), using MechJeb's professional planner when available (falls back to the " +
+			"native Hohmann transfer otherwise). Reads back the resulting orbit, total delta-v, and the predicted " +
+			"CLOSEST APPROACH to the target. Needs a target set in the same system. This is the tool for \"catch up " +
+			"to my other ship\", \"intercept the station\", \"plan a transfer to that target.\" Pass optimized=true " +
+			"for MechJeb's inclination-aware optimizer. Draws burns on the navball only — fires nothing; undo with " +
+			"node_delete/node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in interceptInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planIntercept(in)
+		if err != nil {
+			return toolError("plan_intercept: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_rendezvous",
+		Description: "COMMAND (modifies the flight plan, reversible): plan a full two-burn RENDEZVOUS with the " +
+			"current target — a transfer to intercept, then a match-velocity (kill relative velocity) burn at " +
+			"closest approach — via MechJeb, reading back both nodes, total delta-v, and closest approach. This is " +
+			"\"catch up to AND match speed with my other ship.\" Needs MechJeb functional and a target set; without " +
+			"MechJeb it places the native transfer half and says the match burn needs the mod. Fires nothing; undo " +
+			"with node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in rendezvousInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planRendezvous(in)
+		if err != nil {
+			return toolError("plan_rendezvous: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_match_velocity",
+		Description: "COMMAND (modifies the flight plan, reversible): place a MATCH-VELOCITY (kill relative " +
+			"velocity) node at closest approach to the target via MechJeb — the final-approach burn that zeroes " +
+			"your speed relative to the other ship so you arrive stationary next to it. Needs MechJeb functional and " +
+			"a target set (no native equivalent — it needs the target's velocity at closest approach). Use for " +
+			"\"kill our relative velocity\", \"match speed with the target\", \"stop us next to it.\" Fires nothing; " +
+			"undo with node_delete/node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planMatchVelocity()
+		if err != nil {
+			return toolError("plan_match_velocity: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_interplanetary",
+		Description: "COMMAND (modifies the flight plan, reversible): place an INTERPLANETARY ejection burn to the " +
+			"current target planet via MechJeb, reading back the resulting orbit and delta-v. Set the target to " +
+			"another planet (Duna, Eve, Jool...) first. By default it waits for the optimal transfer window " +
+			"(wait_for_window=false ejects as soon as possible). Needs MechJeb functional (no native equivalent). " +
+			"Use for \"plan our burn to Duna\", \"eject for Jool.\" Fires nothing; undo with node_delete/node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in interplanetaryInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planInterplanetary(in)
+		if err != nil {
+			return toolError("plan_interplanetary: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_return",
+		Description: "COMMAND (modifies the flight plan, reversible): place a RETURN burn to leave the current moon " +
+			"and drop back to its parent body via MechJeb, targeting a return periapsis altitude (return_altitude_m, " +
+			"default 30 km). Use from a moon (Mun, Minmus, a moon of Jool) for \"get us home\", \"plan our return to " +
+			"Kerbin.\" Needs MechJeb functional (no native equivalent). Fires nothing; undo with node_delete/" +
+			"node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in returnInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planReturn(in)
+		if err != nil {
+			return toolError("plan_return: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_match_planes",
+		Description: "COMMAND (modifies the flight plan, reversible): place a PLANE-MATCH node to align your orbital " +
+			"plane with the current target's, via MechJeb — which picks the cheaper of the ascending/descending " +
+			"nodes for you. Needs MechJeb functional and a target set. Without MechJeb, use calc_plane_change for the " +
+			"delta-v and node_create to place it. Use for \"match our plane to the target\", \"we're in different " +
+			"planes, fix it.\" Fires nothing; undo with node_delete/node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.planMatchPlanes()
+		if err != nil {
+			return toolError("plan_match_planes: %v", err), planMJOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "refine_closest_approach",
+		Description: "COMMAND (modifies the flight plan, reversible): place a course-correction node that FINE-TUNES " +
+			"your closest approach to the target down to a desired distance (target_distance_m, default 1 km), via " +
+			"MechJeb. Use after plan_intercept when you're already on an intercept course and want to tighten it — " +
+			"\"tighten our closest approach to 500 meters.\" Needs MechJeb functional, a target set, and an existing " +
+			"intercept trajectory. Fires nothing; undo with node_delete/node_clear.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in refineInput) (*mcp.CallToolResult, planMJOut, error) {
+		out, err := srv.refineClosestApproach(in)
+		if err != nil {
+			return toolError("refine_closest_approach: %v", err), planMJOut{}, nil
 		}
 		return nil, out, nil
 	})

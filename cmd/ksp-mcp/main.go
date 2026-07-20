@@ -169,10 +169,81 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	dump("calc_burn_time (100 m/s)", cb, err)
 
 	runNodeRoundTrip(srv)
+	runMechJebRoundTrip(srv)
 
 	fmt.Println("\nsmoke: OK (connected). Every tool was driven against the live game above; the")
 	fmt.Println("maneuver-node round-trip left the flight plan exactly as it was found.")
 	return 0
+}
+
+// runMechJebRoundTrip drives the MechJeb-backed planners against the live game and
+// prints what came back — proving each one's real behavior on THIS install (whether
+// MechJeb is functional, or degrades to the native fallback / honest note). It only
+// places nodes when the flight plan is empty, and clears whatever it placed at the
+// end, leaving the plan as found.
+func runMechJebRoundTrip(srv *kspServer) {
+	fmt.Printf("\n=== MechJeb-backed planners (reversible) ===\n")
+	if c, err := srv.conn(); err == nil {
+		fmt.Printf("MechJeb: mod present=%v  APIReady=%s  planner functional=%s\n",
+			c.MechJebAvailable(), readyStr(c), functionalStr(c))
+	}
+	before, err := srv.maneuverNodes()
+	if err != nil {
+		fmt.Printf("skip: couldn't read existing nodes: %v\n", err)
+		return
+	}
+	if before.Count != 0 {
+		fmt.Printf("skip node-placing MechJeb tests: %d node(s) already on the plan — not touching the pilot's plan.\n", before.Count)
+		return
+	}
+
+	// Each placing tool guards against an existing plan, so clear between tests to
+	// give each a clean slate — and leave the plan empty at the end.
+	clearIfPlaced := func() {
+		if after, _ := srv.maneuverNodes(); after.Count != 0 {
+			_, _ = srv.nodeClear()
+		}
+	}
+	pi, err := srv.planIntercept(interceptInput{})
+	dump("plan_intercept", pi, err)
+	clearIfPlaced()
+	pr, err := srv.planRendezvous(rendezvousInput{})
+	dump("plan_rendezvous", pr, err)
+	clearIfPlaced()
+	pmv, err := srv.planMatchVelocity()
+	dump("plan_match_velocity", pmv, err)
+	clearIfPlaced()
+	pip, err := srv.planInterplanetary(interplanetaryInput{})
+	dump("plan_interplanetary", pip, err)
+	clearIfPlaced()
+	prt, err := srv.planReturn(returnInput{})
+	dump("plan_return", prt, err)
+	clearIfPlaced()
+	pmp, err := srv.planMatchPlanes()
+	dump("plan_match_planes", pmp, err)
+	clearIfPlaced()
+	rca, err := srv.refineClosestApproach(refineInput{})
+	dump("refine_closest_approach", rca, err)
+	clearIfPlaced()
+
+	final, _ := srv.maneuverNodes()
+	fmt.Printf("nodes after MechJeb round-trip: %d (want 0 — flight plan restored)\n", final.Count)
+}
+
+func readyStr(c *krpc.Conn) string {
+	r, err := c.MechJebReady()
+	if err != nil {
+		return "err:" + err.Error()
+	}
+	return fmt.Sprintf("%v", r)
+}
+
+func functionalStr(c *krpc.Conn) string {
+	ok, detail := c.MechJebPlannerFunctional()
+	if ok {
+		return "true"
+	}
+	return fmt.Sprintf("false (%s)", detail)
 }
 
 // runNodeRoundTrip exercises the Tier 3 write surface REVERSIBLY: it only runs

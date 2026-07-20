@@ -149,19 +149,70 @@ Tier 3 — maneuver-node planning (the ONLY writes; reversible; nodes only, **ne
 node execution — anything that fires an engine or takes the stick. There is no such call anywhere in the
 codebase; the mutating surface is one small file (`krpc/nodes.go`) that touches only maneuver nodes.
 
-**MechJeb presence verdict — PRESENT, not used (by design).** Discovery shows the **`MechJeb` service is
-loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor` (ExecuteOneNode/ExecuteAllNodes, lead-time,
-auto-warp) and the whole `ManeuverPlanner` operation set — `OperationCircularize`, `OperationTransfer`,
-`OperationInterplanetaryTransfer`, `OperationPlane`, `OperationInclination`, `OperationMoonReturn`,
-`OperationLambert`, `OperationKillRelVel`, and more, each `MakeNode`/`MakeNodes` → `SpaceCenter.Node`. We
-**did not** delegate to it: our native `astro` math is textbook-tested, learns-by-doing, and needs no mod.
-Future option — if we want more robust intercepts/landings, Tier 3+ could call MechJeb's planner to *make*
-nodes, and (only in the Tier 4 command wave, behind the spoken go) its `NodeExecutor` to *fly* them. The
-mod is **not required**; our stack stands alone.
+**MechJeb presence verdict — PRESENT; now WIRED for node-making (Tier 3), executor still deferred (Tier 4).**
+Discovery shows the **`MechJeb` service is loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor`
+(ExecuteOneNode/ExecuteAllNodes, lead-time, auto-warp) and the whole `ManeuverPlanner` operation set —
+`OperationTransfer`, `OperationLambert`, `OperationKillRelVel`, `OperationInterplanetaryTransfer`,
+`OperationMoonReturn`, `OperationPlane`, `OperationCourseCorrection`, `OperationCircularize`, and more, each
+`MakeNode`/`MakeNodes` → `SpaceCenter.Node`. The MechJeb-backed **planning** tools (Tier 3, below) now drive
+this to *make* nodes for real intercepts/rendezvous; the native `astro` math stays as the transparent,
+mod-free teaching path and fallback. MechJeb's `NodeExecutor` (to *fly* the nodes) is **still deferred** to
+the future Tier 4 command wave, behind the spoken go/no-go — placing a node never fires anything.
 
-Field note — tool-search: with 21 tools the eager-load cost is ~2.4k tokens of descriptions (~3.5–4k with
+Field note — tool-search: with 28 tools the eager-load cost is ~3.3k tokens of descriptions (~5k with
 schemas), light enough to keep `ENABLE_TOOL_SEARCH=false` in the seat (which also dodges the known
 ToolSearch indexing bug for `--mcp-config` stdio servers, anthropics/claude-code #40314).
+
+---
+
+## P2.1 — MechJeb-backed intercept/rendezvous planners built 2026-07-19
+
+The tool surface grew from 21 → **28**: seven MechJeb-backed planners that drive KRPC.MechJeb's
+`ManeuverPlanner` for the hard problems our native Hohmann can't do well. Tier 3, writes, **nodes only** —
+they place real maneuver node(s), read back the resulting orbit + total Δv + predicted closest approach, and
+fire nothing. `go build/vet/test -race` all green.
+
+New tools (`cmd/ksp-mcp/mechjeb.go`, client surface `krpc/mechjeb.go`):
+- [x] `plan_intercept` — MechJeb `OperationTransfer` to the current target (intercept-timed). **Native
+      fallback:** the textbook Hohmann departure node (`plan_hohmann`) when MechJeb is unavailable.
+- [x] `plan_rendezvous` — two burns: transfer-to-intercept, then `OperationKillRelVel` at closest approach.
+- [x] `plan_match_velocity` — `OperationKillRelVel` alone (the final-approach matching burn).
+- [x] `plan_interplanetary` — `OperationInterplanetaryTransfer` ejection burn to a target planet.
+- [x] `plan_return` — `OperationMoonReturn` (get home from a moon).
+- [x] `plan_match_planes` — `OperationPlane` (MechJeb picks the cheaper AN/DN node).
+- [x] `refine_closest_approach` — `OperationCourseCorrection` (MechJeb's fine-tune-closest-approach op; it
+      exists, so no native iterator was needed).
+
+**API discovered, not guessed.** `cmd/ksp-dump` (new) dumps the live MechJeb service — every procedure name,
+parameter type, and enum value (`TimeReference`, etc.) came from `go run ./cmd/ksp-dump -service MechJeb`
+against the running game. The KRPC.MechJeb workflow: fetch an operation off `ManeuverPlanner`, set its
+properties (setters + `TimeSelector`), call `OperationX_MakeNodes` (places node(s)), then read
+`OperationX_get_ErrorMessage` — MechJeb's honest failure string.
+
+**Hard finding — verified on the real path (KSP.log), name it honestly:** on this dev machine the MechJeb
+planner is **non-functional** because **KRPC.MechJeb 0.7.1 is incompatible with the installed MechJeb2
+2.15.3**. KRPC.MechJeb binds to MechJeb2 internals by reflection at load; 97 bindings failed (log:
+`[KRPC.MechJeb] MuMech.Operation.MakeNodesImpl() not found`, every `Operation*.timeSelector not found`, and
+`Cannot initialize class ManeuverPlanner`). Worse, KRPC.MechJeb still sets **`APIReady = true`** after only
+logging the failure, so APIReady is a **false positive** — every `MakeNodes` then throws a bare
+`NullReferenceException`. The tools therefore do NOT trust APIReady; `MechJebPlannerFunctional()` runs a
+side-effect-free probe (reads `OperationCircularize.ErrorMessage`, which NREs iff the binding is broken) and
+degrades. **Fix (Michael's call — his actively-played install):** run **MechJeb2 2.14.3.0** (what
+KRPC.MechJeb 0.7.1 targets) — the real planner path then lights up with **zero code change** (the tools
+auto-detect functionality). No KRPC.MechJeb release supports MechJeb2 2.15.x yet.
+
+**What that means for verification:** the MechJeb *happy path* is verified-by-code + confirmed against the
+real live MechJeb API (proc/param/enum names all from the discovery dump), but could **not** be verified live
+on this install (the version mismatch). What WAS verified live (via `-smoke`, active vessel "Minmus Rangers
+Lander" orbiting Minmus, target "Minmus Rangers"): all seven tools ran on the real path and degraded
+correctly — `plan_intercept`/`plan_rendezvous` placed a real **native** Hohmann node (6.02 m/s, result orbit
+read back) and the other five returned honest "needs a compatible MechJeb" notes; the round-trip left the
+flight plan empty (as found). Graceful degradation with kRPC down is unit-tested
+(`TestMechJebToolsDegradeWhenDown`).
+
+**Deliberately NOT built (still Tier 4):** MechJeb's `NodeExecutor` (ExecuteOneNode/ExecuteAllNodes, autowarp)
+— the "go for the burn" that would *fly* the planned nodes. Placing nodes never fires anything; wiring the
+executor is the future spoken go/no-go wave, not this one.
 
 ---
 
