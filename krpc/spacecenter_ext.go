@@ -203,6 +203,20 @@ func (c *Conn) BodySurfaceGravity(body uint64) (float64, error) {
 // BodyMu exposes a body's standard gravitational parameter (m^3/s^2).
 func (c *Conn) BodyMu(body uint64) (float64, error) { return c.bodyMu(body) }
 
+// VesselMET returns mission elapsed time (seconds) — used by the flight-control
+// loop's per-tick telemetry.
+func (c *Conn) VesselMET(vessel uint64) (float64, error) {
+	return c.callScalar("SpaceCenter", "Vessel_get_MET", EncodeObject(vessel))
+}
+
+// VesselAvailableThrust returns the full-throttle thrust (N) of the engines that
+// are currently active AND have fuel. The flight loop uses >0 as its "the active
+// stage still has a live engine" signal: it drops to 0 when the active stage
+// flames out, which is what drives auto-staging.
+func (c *Conn) VesselAvailableThrust(vessel uint64) (float64, error) {
+	return c.callScalar("SpaceCenter", "Vessel_get_AvailableThrust", EncodeObject(vessel))
+}
+
 // BodyEquatorialRadius returns a body's equatorial radius (m) — used to turn a
 // requested target ALTITUDE into a radius from the body center for transfer math.
 func (c *Conn) BodyEquatorialRadius(body uint64) (float64, error) {

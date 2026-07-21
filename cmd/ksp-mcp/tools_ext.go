@@ -10,12 +10,15 @@ import (
 // reads (Tier 1), the burn math (Tier 2), and the maneuver-node planners (Tier 3,
 // the only writes — reversible, nodes only). main.go (stdio) and the HTTP handler
 // both call this so every transport exposes the same tools.
-func registerTools(s *mcp.Server, srv *kspServer) {
-	registerReadTools(s, srv)    // 7 original reads
+func registerTools(s *mcp.Server, srv *kspServer, enableFlight bool) {
+	registerReadTools(s, srv)    // 9 reads (7 original + preflight/staging), stage_delta_v, plan_ascent
 	registerTier1Reads(s, srv)   // 5 flight-computer reads
 	registerMathTools(s, srv)    // 4 burn-math tools
 	registerNodeTools(s, srv)    // 5 native maneuver-node planners (writes, reversible)
 	registerMechJebTools(s, srv) // 7 MechJeb-backed planners (writes, reversible, nodes only)
+	if enableFlight {
+		registerFlightTools(s, srv) // 4 Tier-4 flight-control tools (LIVE writes — gated off by default)
+	}
 }
 
 // registerTier1Reads adds the richer read-only tools of the flight-computer wave.

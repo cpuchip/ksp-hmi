@@ -80,20 +80,19 @@ See **RESEARCH.md** for the full field survey with citations and the adopt/borro
 
 ---
 
-## Running `ksp-mcp` (P2 flight computer — 32 tools, built)
+## Running `ksp-mcp` (P2 flight computer — 32 tools, +4 flight-control under `-enable-flight`)
 
 `ksp-mcp` is a Go MCP server that turns a live KSP1 flight over kRPC into a flight computer the CAPCOM can
 reason with. Requires KSP 1.12.5 with the **kRPC** mod; open the kRPC window in-game and click **Start
 server** (default ports `50000`/`50001`).
 
 **Safety tiers.** Tiers 1–2 (reads + burn math) mutate nothing. Tier 3 (maneuver-node planning — both the
-native planners and the MechJeb-backed intercept/rendezvous planners) is the only write surface and it writes
-ONLY maneuver nodes — planned burns drawn on the navball, fully reversible; it **never** fires an engine,
-stages, toggles SAS, or time-warps. Tier 4 (flight commands, incl. MechJeb's NodeExecutor "go for the burn")
-is the later spoken go/no-go wave and is deliberately not wired to the controls — there is no throttle/stage/
-SAS/warp/execute call against a live vessel anywhere in the code. Its *brain* exists as a pure, sim-tested
-executor (see the autopilot note below); `plan_ascent` lets CAPCOM author and read back a flight program, but
-nothing flies it yet.
+native planners and the MechJeb-backed intercept/rendezvous planners) writes ONLY maneuver nodes — planned
+burns drawn on the navball, fully reversible; it **never** fires an engine, stages, toggles SAS, or
+time-warps. **Tier 4 (flight commands)** actually flies the vessel (throttle/stage/autopilot) and is gated
+behind **`-enable-flight`** (default OFF): without the flag the flight tools don't exist; with it, they still
+fire nothing until a program is armed AND `flight_execute` gets `confirm="go"`. Run the server plainly (no
+`-enable-flight`) and the entire live-control surface is dormant — reads, math, and node-planning only.
 
 ```bash
 go build ./...                 # build the client + server
@@ -136,6 +135,10 @@ exits non-zero.
 - **Native maneuver-node planning (Tier 3 — writes, reversible, nodes only):** `node_create`, `node_delete`,
   `node_clear`, `plan_circularize`, `plan_hohmann`. Each is marked a COMMAND, modifies only the flight plan,
   and fires nothing.
+- **Flight control (Tier 4 — LIVE writes; only under `-enable-flight`):** `flight_arm` (build + validate an
+  ascent, read it back, fire nothing), `flight_execute` (refuses unless armed AND `confirm="go"` — the live
+  trigger), `flight_abort` (cut throttle + disengage), `flight_status`. Absent unless the server is started
+  with `-enable-flight`. Nothing fires without the spoken go.
 - **MechJeb-backed planning (Tier 3 — writes, reversible, nodes only):** `plan_intercept`, `plan_rendezvous`,
   `plan_match_velocity`, `plan_interplanetary`, `plan_return`, `plan_match_planes`, `refine_closest_approach`.
   These drive **KRPC.MechJeb**'s `ManeuverPlanner` for real intercepts/rendezvous and read back the resulting
@@ -159,9 +162,12 @@ gravity-turn pitch schedule plus auto-stage and apoapsis-cutoff logic.
 - **Proven by a sim oracle:** `TestSimFliesAscent` flies a toy kinematic rocket entirely by `Step` and
   asserts it lifts off, auto-stages when the booster runs dry, and cuts at the target apoapsis — the flight
   logic is verified before it is ever connected to a live throttle.
-- **Phase 2 (not built, needs the game + your go):** wire `Control` outputs to real kRPC writes
-  (throttle/stage/autopilot), add arm/execute/abort/status tools and the go/no-go gate. Nothing in the repo
-  writes a control to a live vessel today.
+- **Phase 2 (BUILT, mock-tested, gated OFF by default):** the runner (`autopilot/runner.go`) loops `Step`
+  against live telemetry and applies `Control` to real kRPC writes via `krpc/control.go`. The tools
+  `flight_arm` / `flight_execute` / `flight_abort` / `flight_status` (see below) implement the spoken go/no-go
+  gate. They exist ONLY under `-enable-flight`, and even then fire nothing without an armed program AND
+  `confirm="go"`. The runner guarantees a throttle-cut on every exit. **Not yet live-fired** — the first real
+  engine fire is a supervised test-craft flight, which is the remaining verification.
 
 ### MechJeb version compatibility (matters for the real planner path)
 

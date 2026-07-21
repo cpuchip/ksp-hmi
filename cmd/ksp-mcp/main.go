@@ -38,6 +38,7 @@ func main() {
 	httpAddr := flag.String("http", "", "serve MCP over Streamable HTTP on this address (e.g. 127.0.0.1:7801); default is stdio")
 	smoke := flag.Bool("smoke", false, "connect, run discovery, call every read tool once, print results, then exit — the standing live oracle")
 	reads := flag.Bool("reads", false, "connect and call only the READ tools once (NO maneuver-node writes, NO MechJeb node-placing) — safe to run against an active flight without touching the plan; exits 0 when a vessel was read, 2 when connected but no vessel, 1 when kRPC is unreachable")
+	enableFlight := flag.Bool("enable-flight", false, "EXPOSE the Tier-4 flight-control tools (flight_arm/execute/abort/status) that actually fly the vessel — throttle, staging, autopilot. OFF by default; even on, nothing fires until a program is armed AND flight_execute is given confirm=\"go\". Use only when you intend to let the mind take the stick (e.g. a supervised test flight).")
 	flag.Parse()
 
 	cfg := krpc.DialConfig{
@@ -58,13 +59,16 @@ func main() {
 	}
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-	registerTools(s, srv)
+	registerTools(s, srv, *enableFlight)
+	if *enableFlight {
+		logger.Printf("WARNING: -enable-flight is ON — the flight-control tools (throttle/stage/autopilot) are exposed. Nothing fires until a program is armed and flight_execute is given confirm=\"go\".")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if *httpAddr != "" {
-		if err := runHTTP(ctx, srv, *httpAddr, logger); err != nil {
+		if err := runHTTP(ctx, srv, *httpAddr, *enableFlight, logger); err != nil {
 			logger.Fatalf("http: %v", err)
 		}
 		return
@@ -80,10 +84,10 @@ func main() {
 // session gets a fresh *mcp.Server, but every tool closes over the ONE shared
 // kspServer so the kRPC connection is process-wide. Bound to whatever address is
 // given; use a loopback address unless you intend to expose it.
-func runHTTP(ctx context.Context, srv *kspServer, addr string, logger *log.Logger) error {
+func runHTTP(ctx context.Context, srv *kspServer, addr string, enableFlight bool, logger *log.Logger) error {
 	getServer := func(*http.Request) *mcp.Server {
 		s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-		registerTools(s, srv)
+		registerTools(s, srv, enableFlight)
 		return s
 	}
 	handler := mcp.NewStreamableHTTPHandler(getServer, nil)

@@ -23,7 +23,7 @@ func TestMCPRoundTrip(t *testing.T) {
 	defer srv.Close()
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
-	registerTools(s, srv)
+	registerTools(s, srv, false) // default surface: flight-control tools OFF
 
 	serverT, clientT := mcp.NewInMemoryTransports()
 	go func() { _ = s.Run(ctx, serverT) }()

@@ -169,12 +169,12 @@ Tier 3 — maneuver-node planning (the ONLY writes; reversible; nodes only, **ne
 - [x] Each write tool's description is marked **COMMAND**, states it modifies the flight plan, and that it
       is reversible and fires nothing.
 
-**Tier 4 — flight commands (the spoken go/no-go wave): BRAIN built (Phase 1), controls NOT wired (Phase 2).**
-Nothing in the codebase writes throttle/stage/SAS/warp/execute to a live vessel; the only live mutating
-surface is still `krpc/nodes.go` (maneuver nodes). What DOES exist is the deterministic flight-program
-executor (`autopilot/`, pure, sim-tested — see the Autopilot section) and `plan_ascent` (authors + validates
-+ reads back a program, flies nothing). Phase 2 = wire the executor's `Control` outputs to real kRPC controls
-behind an arm/execute/abort gate — needs the game and Michael's explicit go.
+**Tier 4 — flight commands (the spoken go/no-go wave): BUILT + mock-tested, gated OFF by default, NOT yet
+live-fired.** The live write surface is now `krpc/control.go` (throttle/stage/SAS/autopilot) + `krpc/nodes.go`
+(maneuver nodes). The flight-control tools (`flight_arm`/`execute`/`abort`/`status`) exist ONLY under
+`-enable-flight` and fire nothing without an armed program + a spoken `"go"`. The executor + runner are
+race-tested against a sim; the live control path is verified by unit/mock only — the FIRST real engine fire
+is a SUPERVISED test-craft flight (never a live mission), which is the remaining real-path verification.
 
 Autopilot — the fast-loop flight-program executor (Phase 1: brain built, fires nothing):
 - [x] `autopilot` package: `Step(program, telemetry, state) → control` — a PURE state machine (gravity-turn
@@ -186,22 +186,24 @@ Autopilot — the fast-loop flight-program executor (Phase 1: brain built, fires
       auto-stage → cutoff at target apoapsis). Plans only — needs no game, writes nothing.
 - [x] Oracle: `TestSimFliesAscent` flies a toy kinematic rocket entirely by `Step` and asserts liftoff,
       auto-stage on booster burnout, and cutoff at the target apoapsis — flight logic proven before any wiring.
-- [ ] **Phase 2 — DESIGN DECIDED 2026-07-20 (Michael: "go-gate first"), NOT yet built.** Control-write
-      procedure names all verified live this session (`Control_set_Throttle`, `Control_ActivateNextStage`,
-      `Control_set_SAS`, `Vessel_get_AutoPilot` → `AutoPilot_Engage`/`Disengage`/`TargetPitchAndHeading`,
-      `Vessel_get_SurfaceReferenceFrame`; `VesselControl` already exported in `nodes.go`). Build plan:
-    - `krpc/control.go` — isolated live-control write surface (throttle/stage/SAS/autopilot engage+target),
-      the second guarded write file alongside `nodes.go`.
+- [x] **Phase 2 — BUILT + mock-tested 2026-07-20 (go-gate first). NOT yet live-fired (awaits a supervised
+      test craft — never a real mission).** All control-write names verified live. Shipped:
+    - `krpc/control.go` — isolated live-control write surface (throttle/stage/SAS/autopilot engage + target
+      pitch/heading in the surface frame), the second guarded write file alongside `nodes.go`.
     - `autopilot/runner.go` — `Run(ctx, program, TelemetrySource, ControlSink, dt)` loop over `Step`;
-      interfaces so it's unit-tested against a mock sink + scripted telemetry (no kRPC). Sink `Stop()` cuts
-      throttle + disengages on abort/done/panic.
-    - `cmd/ksp-mcp/flight.go` — kRPC-backed sink + telemetry source + the tools: **`flight_arm`** (validate +
-      read back, no fire), **`flight_execute`** (requires an armed program + an explicit "go" confirm token →
-      starts the runner = the ONLY live-fire trigger), **`flight_abort`**, **`flight_status`**.
-    - **Go-gate first** (Michael's pick): every fire needs the spoken go; NO full-auto yet (add later). Gate
-      the whole flight-control tool set behind an **`-enable-flight`** flag (default OFF) so it's dormant until
-      he opts in with a throwaway craft. Live first-flight is SUPERVISED on a test craft — never his mission.
-    - Later: circularization as an executor phase (execute the node), then optional full-auto "take us up".
+      interfaces so it's unit-tested against a mock sink + scripted sim (no kRPC). **Invariant: `Stop()` (cut
+      throttle + disengage) is called EXACTLY ONCE on every exit — completion, abort, telemetry loss, cancel,
+      or panic.** Race-tested: flies the sim, auto-stages, cuts at apoapsis; aborts + idles on sensor loss and
+      on cancel.
+    - `cmd/ksp-mcp/flight.go` — kRPC-backed sink + telemetry source (available-thrust>0 = the has-fuel signal)
+      + tools: **`flight_arm`** (validate + read back, fires nothing, needs no game), **`flight_execute`**
+      (refuses unless a program is armed AND `confirm="go"` → starts the runner in a goroutine = the ONLY
+      live-fire trigger), **`flight_abort`** (cancels → Stop), **`flight_status`**.
+    - Whole set gated behind **`-enable-flight`** (default OFF): absent → the tools don't exist. Even on,
+      nothing fires without arm + "go". Unit-tested that the tools are hidden without the flag and present
+      with it. Michael's live capcom seat runs WITHOUT the flag, so it stays reads-only until he opts in.
+    - Later: circularization as an executor phase (execute the node); optional full-auto "take us up"; a
+      dedicated prograde SAS mode (ascent uses pitch/heading, so prograde steering is currently best-effort SAS).
 
 **MechJeb presence verdict — PRESENT; now WIRED for node-making (Tier 3), executor still deferred (Tier 4).**
 Discovery shows the **`MechJeb` service is loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor`

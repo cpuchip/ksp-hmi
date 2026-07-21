@@ -21,6 +21,12 @@ type kspServer struct {
 	cfg krpc.DialConfig
 	mu  sync.Mutex
 	c   *krpc.Conn
+
+	// flight holds the armed program + running autopilot lifecycle (Tier 4). It is
+	// only reachable through the flight_* tools, which are registered ONLY when the
+	// server is started with -enable-flight. nil-safe: the flight tools construct
+	// it lazily.
+	flight flightState
 }
 
 func newKSPServer(cfg krpc.DialConfig) *kspServer { return &kspServer{cfg: cfg} }
