@@ -221,6 +221,39 @@ Set this in the `args` of whichever config mounts `ksp-mcp` (`.mcp.json`,
 `claude_desktop_config.json`, or the seat's `stewards-mcp.json`). The RPC/stream ports are
 `-rpc-port` / `-stream-port` if you changed them in-game.
 
+> **The other half — the kRPC SERVER has to accept off-box connections too.** The `-host`
+> above is only the client side (where `ksp-mcp` dials). By default the in-game kRPC server
+> binds to **`localhost`, which accepts same-machine connections ONLY** — a remote/LAN mind
+> will get "connection refused" no matter what `-host` says. To allow it: in the kRPC
+> window in-game, click **Edit** and set **Address** from `localhost` to **`0.0.0.0`** (now
+> it accepts localhost, LAN, and mesh IPs), then make sure the host firewall allows inbound
+> TCP `50000`/`50001`. Leave it on `localhost` for same-machine setups — only open it up
+> when the mind genuinely runs on another box.
+
+### Hosting more than one CAPCOM on one box (offload weak laptops)
+
+If one strong machine hosts the voice + mind for several players (so each player's laptop
+only runs KSP + a browser tab and stays snappy), run **one voice bot per player** on the
+host, each wired to its own mind and its own game:
+
+- **Distinct bot port per player** — e.g. `7862`, `7863` (the voice bot's WebRTC port).
+  Each player opens *their* port in a browser; the laptop does only WebRTC audio, so its
+  GPU stays free for KSP.
+- **Distinct mind session per player.** With a loom seat, give each a **distinct sticky
+  session** (`sticky:capcom-alice`, `sticky:capcom-bob`) — otherwise the two conversations
+  cross. With any other mind, run two separate instances.
+- **Distinct `ksp-mcp -host` per player** — each mind's `ksp-mcp` dials a *different* game
+  (`-host <that player's machine>`), and every one of those games needs the `0.0.0.0`
+  server binding above (plus a reachable network path — same LAN, or a mesh like NetBird).
+- **Cost:** the voice models (faster-whisper STT + Kokoro TTS) are light — several stacks
+  fit comfortably on a modern GPU. The heavy part is the mind: **cloud-backed seats add no
+  local VRAM** (the host just orchestrates); local models compete for VRAM, so point
+  multiple seats at **one shared model instance** rather than loading the weights twice.
+- **Alternative that avoids the `0.0.0.0` binding:** run `ksp-mcp -http` on each player's
+  own machine (localhost to their game) and mount it into the host seat by URL. Then the
+  game stays `localhost`-bound and only the MCP HTTP port crosses the network. More moving
+  parts; the `0.0.0.0` route is simpler for a home LAN.
+
 ---
 
 ## 6. Troubleshooting
