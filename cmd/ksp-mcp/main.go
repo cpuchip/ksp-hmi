@@ -37,6 +37,7 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Second, "dial and per-call timeout")
 	httpAddr := flag.String("http", "", "serve MCP over Streamable HTTP on this address (e.g. 127.0.0.1:7801); default is stdio")
 	smoke := flag.Bool("smoke", false, "connect, run discovery, call every read tool once, print results, then exit — the standing live oracle")
+	reads := flag.Bool("reads", false, "connect and call only the READ tools once (NO maneuver-node writes, NO MechJeb node-placing) — safe to run against an active flight without touching the plan; exits 0 when a vessel was read, 2 when connected but no vessel, 1 when kRPC is unreachable")
 	flag.Parse()
 
 	cfg := krpc.DialConfig{
@@ -51,6 +52,9 @@ func main() {
 
 	if *smoke {
 		os.Exit(runSmoke(srv, cfg))
+	}
+	if *reads {
+		os.Exit(runReads(srv, cfg))
 	}
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "ksp-mcp", Version: version}, nil)
@@ -184,6 +188,62 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	fmt.Println("\nsmoke: OK (connected). Every tool was driven against the live game above; the")
 	fmt.Println("maneuver-node round-trip left the flight plan exactly as it was found.")
 	return 0
+}
+
+// runReads is the SAFE live probe: it drives only the read tools once and writes
+// NOTHING — no maneuver-node round-trip, no MechJeb node-placing. That makes it
+// safe to run repeatedly against an active flight (e.g. a background waiter) with
+// zero risk of a node flickering onto the pilot's navball. Exit codes let a poller
+// react: 0 = a vessel was read, 2 = connected but no active vessel (keep waiting),
+// 1 = kRPC unreachable.
+func runReads(srv *kspServer, cfg krpc.DialConfig) int {
+	fmt.Printf("ksp-mcp %s — READ-ONLY live probe against %s:%d (writes nothing)\n", version, cfg.Host, cfg.RPCPort)
+
+	c, err := srv.conn()
+	if err != nil {
+		fmt.Printf("\nNOT CONNECTED: %s\n", srv.connectMsg(err))
+		return 1
+	}
+	fmt.Printf("connected: kRPC client id %s\n", c.ClientGUID())
+
+	gs := srv.gameState()
+	dump("game_state", gs, nil)
+
+	vs, err := srv.vesselStatus()
+	dump("vessel_status", vs, err)
+
+	// Every read tool (all read-only). Node/MechJeb PLACING tools are deliberately omitted.
+	ob, err := srv.orbit()
+	dump("orbit", ob, err)
+	ft, err := srv.flightTelemetry()
+	dump("flight_telemetry", ft, err)
+	rs, err := srv.resources()
+	dump("resources", rs, err)
+	nd, err := srv.maneuverNodes()
+	dump("maneuver_nodes", nd, err)
+	cw, err := srv.crew()
+	dump("crew", cw, err)
+	pf, err := srv.preflight()
+	dump("preflight", pf, err)
+	sp, err := srv.stagingPlan()
+	dump("staging_plan", sp, err)
+	ti, err := srv.targetInfo()
+	dump("target_info", ti, err)
+	lv, err := srv.listVessels()
+	dump("list_vessels", lv, err)
+	dv, err := srv.deltaVStatus()
+	dump("delta_v_status", dv, err)
+	at, err := srv.attitude()
+	dump("attitude", at, err)
+	cc, err := srv.calcCircularize()
+	dump("calc_circularize", cc, err)
+
+	if vs.Available {
+		fmt.Printf("\nreads: OK — active vessel %q read live. Nothing was written.\n", vs.Name)
+		return 0
+	}
+	fmt.Printf("\nreads: connected, but no active vessel (scene: %s). Roll a craft out and re-run. Nothing was written.\n", gs.Scene)
+	return 2
 }
 
 // runMechJebRoundTrip drives the MechJeb-backed planners against the live game and

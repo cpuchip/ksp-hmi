@@ -99,10 +99,15 @@ nothing flies it yet.
 go build ./...                 # build the client + server
 go test ./...                  # unit + MCP-protocol oracles (no game needed)
 go run ./cmd/ksp-mcp -smoke    # LIVE oracle: connect, discover, drive every tool, print outputs
+go run ./cmd/ksp-mcp -reads    # SAFE live probe: read tools only, writes nothing (safe mid-flight)
 ```
 
 `-smoke` is the standing live check: with the game up it connects, runs `KRPC.GetServices` discovery, and
-calls every tool against the real flight; with the game down it prints exactly how to bring it up and
+calls every tool against the real flight — including a reversible maneuver-node round-trip. `-reads` is the
+gentler sibling for probing an **active** flight: it drives only the read tools and **writes nothing** (no
+node round-trip, no MechJeb node-placing), so it can't disturb the pilot's flight plan. It exits 0 when a
+vessel was read, 2 when connected with no vessel (keep polling), 1 when kRPC is unreachable. With the game
+down, `-smoke` prints exactly how to bring it up and
 exits non-zero.
 
 **Tools (31):**
