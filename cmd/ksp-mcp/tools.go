@@ -144,6 +144,23 @@ func registerReadTools(s *mcp.Server, srv *kspServer) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "stage_delta_v",
+		Description: "Report PER-STAGE delta-v for the active vessel — for each stage (highest first, KSP firing " +
+			"order) the delta-v, effective vacuum Isp, and start/end mass — plus the total. Computed from the " +
+			"live part tree (a serial-staging estimate; it matches the in-game readout for standard rockets, and " +
+			"fuel crossfeed / asparagus can differ). Uses current masses, so in flight it's REMAINING delta-v. " +
+			"Use when the pilot asks \"what's my delta-v\", \"how much dV per stage\", \"can I make it to the Mun " +
+			"and back\", or when planning a mission. Reads only. (delta_v_status gives whole-ship thrust/TWR/Isp; " +
+			"this gives the staged dV budget.)",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, stageDVOut, error) {
+		out, err := srv.stageDeltaV()
+		if err != nil {
+			return toolError("stage_delta_v: %v", err), stageDVOut{}, nil
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "plan_ascent",
 		Description: "PLAN a launch-to-orbit ascent: author a flight program (liftoff, gravity turn, auto-stage, " +
 			"engine cutoff at a target apoapsis) and get it back validated with a spoken read-back you give the " +

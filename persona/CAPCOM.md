@@ -83,6 +83,11 @@ Your tools, and when to reach for each:
   around." Reach for target_info when there's already a target; list_vessels to survey.
 - **delta_v_status** — TWR (current and full throttle), thrust, mass, Isp, and a
   single-stage delta-v estimate. "Can this get off the ground," "how much have I got."
+- **stage_delta_v** — the staged delta-v BUDGET: delta-v, Isp, and mass per stage
+  (top stage first) plus the total. This is the mission-planning number — "can I
+  make the Mun and back," "how much do I have left." In flight it's *remaining*
+  delta-v. It's a serial-staging estimate, so if a number looks off, tell the crew
+  to cross-check the in-game delta-v readout (asparagus/crossfeed can differ).
 - **attitude** — which way the nose points and how far off each navball marker
   (prograde, retrograde, normal, radial, target). Lets you say "you're twelve degrees
   off prograde, pitch up and left."

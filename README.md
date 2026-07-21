@@ -80,7 +80,7 @@ See **RESEARCH.md** for the full field survey with citations and the adopt/borro
 
 ---
 
-## Running `ksp-mcp` (P2 flight computer — 31 tools, built)
+## Running `ksp-mcp` (P2 flight computer — 32 tools, built)
 
 `ksp-mcp` is a Go MCP server that turns a live KSP1 flight over kRPC into a flight computer the CAPCOM can
 reason with. Requires KSP 1.12.5 with the **kRPC** mod; open the kRPC window in-game and click **Start
@@ -110,7 +110,7 @@ vessel was read, 2 when connected with no vessel (keep polling), 1 when kRPC is 
 down, `-smoke` prints exactly how to bring it up and
 exits non-zero.
 
-**Tools (31):**
+**Tools (32):**
 
 - **Reads (Tier 1):** `vessel_status`, `orbit`, `flight_telemetry`, `resources`, `maneuver_nodes` (reads
   existing nodes), `crew`, `game_state` (the honest "can I even answer" tool), plus `target_info` (target +
@@ -118,9 +118,15 @@ exits non-zero.
   `list_vessels` (all craft, nearest first), `delta_v_status` (TWR, thrust, mass, Isp, Δv estimate),
   `attitude` (offsets from every navball marker), and `bodies` (radius/gravity/SOI/day/atmosphere).
 - **Preflight (reads):** `preflight` (a go/no-go checklist + verdict over crew, power, engines, parachutes,
-  staging, and a Δv floor — flags only high-confidence problems, reports the rest as facts) and
-  `staging_plan` (the staging sequence, top stage first: which engines light, decouplers fire, and chutes
-  deploy at each stage). Reads the part tree; mutates nothing.
+  staging, a **liftoff-TWR** go/no-go computed from the first stage's engines, and a Δv floor — flags only
+  high-confidence problems, reports the rest as facts) and `staging_plan` (the staging sequence, top stage
+  first: which engines light, decouplers fire, and chutes deploy at each stage). Reads the part tree; mutates
+  nothing.
+- **Per-stage delta-v (read):** `stage_delta_v` computes the staged Δv budget from the live part tree — Δv,
+  vacuum Isp, and start/end mass per stage (highest first), plus the total. A serial-staging estimate
+  (matches KSP's in-game readout for standard rockets; asparagus/crossfeed can differ). Uses current masses,
+  so in flight it's *remaining* Δv. The pure model (`astro.StageDeltaVs`) is unit-tested against a
+  hand-computed rocket.
 - **Burn math (Tier 2, pure `astro` package, textbook-tested):** `calc_circularize`, `calc_hohmann`,
   `calc_plane_change`, `calc_burn_time`.
 - **Ascent planning (plans only — flies nothing):** `plan_ascent` authors a launch-to-orbit flight program

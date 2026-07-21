@@ -141,6 +141,17 @@ Preflight — go/no-go checklist + staging inspector (read-only; part-tree reads
       **kRPC procedure names authored against the kRPC 0.5.4 docs; pending live `-smoke` confirmation on a
       running craft (added while the game was off) — see the P2 verification note.**
 
+Per-stage delta-v (read-only; the mission-planning budget):
+- [x] `stage_delta_v` — per-stage Δv, vacuum Isp, and start/end mass (highest stage first) + total, from the
+      live part tree. Serial-staging model (`astro.StageDeltaVs`, pure + unit-tested against a hand-computed
+      two-stage rocket: 2271 + 1703 m/s). Uses current masses → in flight it's *remaining* Δv. Honestly
+      labeled: matches KSP's stock readout for standard rockets; crossfeed/asparagus can differ. Live: read
+      a lander's 1680 m/s across stages (Isp 320/345 — real KSP vacuum Isps). Cross-check vs the in-game Δv
+      display is the accuracy oracle.
+- [x] `preflight` liftoff-TWR: computed from the first-ignition stage's engine max thrust (reads fine unlit)
+      ÷ wet mass ÷ body gravity — a real pad go/no-go (<1.0 NO-GO) that whole-vessel thrust can't give
+      pre-ignition. In flight it degrades to an info line (upper stages routinely <1.0).
+
 Tier 2 — burn math (pure `astro` package, textbook-tested, no game write):
 - [x] `calc_circularize` — Δv at apoapsis & periapsis (vis-viva).
 - [x] `calc_hohmann` — departure/arrival Δv, transfer time, required phase, and time-to-window vs a target.

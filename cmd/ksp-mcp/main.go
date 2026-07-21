@@ -151,6 +151,10 @@ func runSmoke(srv *kspServer, cfg krpc.DialConfig) int {
 	sp, err := srv.stagingPlan()
 	dump("staging_plan", sp, err)
 
+	// Per-stage delta-v (read-only).
+	sdv, err := srv.stageDeltaV()
+	dump("stage_delta_v", sdv, err)
+
 	// Ascent autopilot PLANNING (authors + validates + reads back; flies nothing).
 	pa := srv.planAscent(ascentInput{TargetApoapsisM: 80000})
 	dump("plan_ascent (80km)", pa, nil)
@@ -235,6 +239,8 @@ func runReads(srv *kspServer, cfg krpc.DialConfig) int {
 	dump("delta_v_status", dv, err)
 	at, err := srv.attitude()
 	dump("attitude", at, err)
+	sdv, err := srv.stageDeltaV()
+	dump("stage_delta_v", sdv, err)
 	cc, err := srv.calcCircularize()
 	dump("calc_circularize", cc, err)
 
