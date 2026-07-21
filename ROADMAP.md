@@ -186,9 +186,22 @@ Autopilot — the fast-loop flight-program executor (Phase 1: brain built, fires
       auto-stage → cutoff at target apoapsis). Plans only — needs no game, writes nothing.
 - [x] Oracle: `TestSimFliesAscent` flies a toy kinematic rocket entirely by `Step` and asserts liftoff,
       auto-stage on booster burnout, and cutoff at the target apoapsis — flight logic proven before any wiring.
-- [ ] **Phase 2 (gated, needs game + Michael's go):** a runner that loops `Step` against live telemetry
-      (kRPC streams for low latency) and applies `Control` to throttle/stage/autopilot; arm/execute/abort/
-      status tools; the spoken go/no-go arm gate; circularization as an executor phase (execute the node).
+- [ ] **Phase 2 — DESIGN DECIDED 2026-07-20 (Michael: "go-gate first"), NOT yet built.** Control-write
+      procedure names all verified live this session (`Control_set_Throttle`, `Control_ActivateNextStage`,
+      `Control_set_SAS`, `Vessel_get_AutoPilot` → `AutoPilot_Engage`/`Disengage`/`TargetPitchAndHeading`,
+      `Vessel_get_SurfaceReferenceFrame`; `VesselControl` already exported in `nodes.go`). Build plan:
+    - `krpc/control.go` — isolated live-control write surface (throttle/stage/SAS/autopilot engage+target),
+      the second guarded write file alongside `nodes.go`.
+    - `autopilot/runner.go` — `Run(ctx, program, TelemetrySource, ControlSink, dt)` loop over `Step`;
+      interfaces so it's unit-tested against a mock sink + scripted telemetry (no kRPC). Sink `Stop()` cuts
+      throttle + disengages on abort/done/panic.
+    - `cmd/ksp-mcp/flight.go` — kRPC-backed sink + telemetry source + the tools: **`flight_arm`** (validate +
+      read back, no fire), **`flight_execute`** (requires an armed program + an explicit "go" confirm token →
+      starts the runner = the ONLY live-fire trigger), **`flight_abort`**, **`flight_status`**.
+    - **Go-gate first** (Michael's pick): every fire needs the spoken go; NO full-auto yet (add later). Gate
+      the whole flight-control tool set behind an **`-enable-flight`** flag (default OFF) so it's dormant until
+      he opts in with a throwaway craft. Live first-flight is SUPERVISED on a test craft — never his mission.
+    - Later: circularization as an executor phase (execute the node), then optional full-auto "take us up".
 
 **MechJeb presence verdict — PRESENT; now WIRED for node-making (Tier 3), executor still deferred (Tier 4).**
 Discovery shows the **`MechJeb` service is loaded** (KRPC.MechJeb / Genhis mod): a full `NodeExecutor`
