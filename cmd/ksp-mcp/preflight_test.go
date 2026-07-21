@@ -155,6 +155,63 @@ func TestBuildStagingPlan_Empty(t *testing.T) {
 	}
 }
 
+func TestFirstIgnitionThrust(t *testing.T) {
+	engines := []krpc.EngineInfo{
+		{Title: "Mainsail", Stage: 5, MaxThrustN: 1379000},
+		{Title: "Kodiak", Stage: 5, MaxThrustN: 240000},
+		{Title: "Kodiak", Stage: 5, MaxThrustN: 240000},
+		{Title: "Skipper", Stage: 2, MaxThrustN: 568000}, // upper stage — must NOT count
+		{Title: "Vernor", Stage: -1, MaxThrustN: 12000},  // unstaged — must NOT count
+	}
+	thrust, stage, count := firstIgnitionThrust(engines)
+	if stage != 5 {
+		t.Fatalf("first ignition stage = %d, want 5 (highest engine stage)", stage)
+	}
+	if count != 3 {
+		t.Fatalf("engine count in first stage = %d, want 3", count)
+	}
+	if thrust != 1379000+240000+240000 {
+		t.Fatalf("first-stage thrust = %.0f, want %.0f", thrust, 1379000.0+240000+240000)
+	}
+	if th, st, c := firstIgnitionThrust(nil); th != 0 || st != -1 || c != 0 {
+		t.Fatalf("no engines: got (%.0f,%d,%d), want (0,-1,0)", th, st, c)
+	}
+}
+
+func TestEvaluatePreflight_LiftoffTWR(t *testing.T) {
+	// On the pad, TWR below 1.0 is a NO-GO (won't leave the ground).
+	f := nominalInFlight()
+	f.Situation = "PreLaunch"
+	f.LiftoffThrustN = 200000
+	f.LiftoffTWR = 0.85
+	items, v := evaluatePreflight(f)
+	if v != "NO-GO" {
+		t.Fatalf("pad TWR 0.85: verdict = %q, want NO-GO", v)
+	}
+	if statusOf(items, "liftoff-twr") != "no-go" {
+		t.Fatalf("liftoff-twr status = %q, want no-go", statusOf(items, "liftoff-twr"))
+	}
+
+	// Healthy pad TWR is a GO line.
+	f.LiftoffTWR = 1.6
+	items, _ = evaluatePreflight(f)
+	if statusOf(items, "liftoff-twr") != "go" {
+		t.Fatalf("pad TWR 1.6 status = %q, want go", statusOf(items, "liftoff-twr"))
+	}
+
+	// The SAME low TWR in flight is informational, not a no-go (upper stages are
+	// routinely below 1.0) — it appears under "thrust", not "liftoff-twr".
+	f.Situation = "Orbiting"
+	f.LiftoffTWR = 0.4
+	items, v = evaluatePreflight(f)
+	if v == "NO-GO" {
+		t.Fatalf("low TWR in orbit must not be NO-GO, got %q", v)
+	}
+	if statusOf(items, "thrust") != "info" {
+		t.Fatalf("in-orbit TWR should be an info 'thrust' line, got %q", statusOf(items, "thrust"))
+	}
+}
+
 func TestElectricCharge(t *testing.T) {
 	totals := []krpc.ResourceLevel{
 		{Name: "LiquidFuel", Amount: 90, Max: 100},

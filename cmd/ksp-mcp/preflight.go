@@ -48,6 +48,12 @@ type preflightFacts struct {
 	StageDVEstimateMS float64
 	TWRFull           float64
 	Body              string
+	// Liftoff TWR computed from the first-ignition stage's engines (their max
+	// thrust reads correctly even unlit), against the wet mass and this body's
+	// gravity — the go/no-go "will it climb" number that whole-vessel thrust can't
+	// give on the pad (it counts active engines only, so it's 0 before ignition).
+	LiftoffTWR     float64
+	LiftoffThrustN float64
 }
 
 // evaluatePreflight turns the read facts into a spoken checklist and an overall
@@ -110,6 +116,24 @@ func evaluatePreflight(f preflightFacts) (items []checkItem, verdict string) {
 		add("parachutes", "go", parachuteSummary(f.Parachutes))
 	}
 
+	// Liftoff TWR — the single most important launch number, and computable on the
+	// pad from the first stage's engines before they ignite. On the ground it's a
+	// real go/no-go (below 1.0 the craft can't lift off THIS body); in flight the
+	// same number is only informational (upper stages routinely run below 1.0).
+	if f.LiftoffThrustN > 0 && f.LiftoffTWR > 0 {
+		onGround := isPreLaunch(f.Situation) || equalFold(f.Situation, "Landed") || equalFold(f.Situation, "Splashed")
+		switch {
+		case onGround && f.LiftoffTWR < 1.0:
+			add("liftoff-twr", "no-go", fmt.Sprintf("first-stage TWR %.2f at %s — below 1.0, it won't leave the ground", f.LiftoffTWR, f.Body))
+		case onGround && f.LiftoffTWR < 1.2:
+			add("liftoff-twr", "note", fmt.Sprintf("first-stage TWR %.2f — will lift but sluggish; 1.2–1.8 is a healthier climb", f.LiftoffTWR))
+		case onGround:
+			add("liftoff-twr", "go", fmt.Sprintf("first-stage TWR %.2f at %s — good climb", f.LiftoffTWR, f.Body))
+		default:
+			add("thrust", "info", fmt.Sprintf("current-stage TWR %.2f at %s", f.LiftoffTWR, f.Body))
+		}
+	}
+
 	// Staging — informational count; the full sequence is the staging_plan tool.
 	add("staging", "info", fmt.Sprintf("%d parts, current stage %d — ask for the staging plan for the full sequence", f.TotalParts, f.CurrentStage))
 
@@ -143,6 +167,30 @@ func parachuteSummary(chutes []krpc.ParachuteInfo) string {
 }
 
 func isPreLaunch(situation string) bool { return equalFold(situation, "PreLaunch") }
+
+// firstIgnitionThrust sums the max thrust (N) of the engines that ignite in the
+// first stage to fire — the highest-numbered stage carrying engines, since KSP
+// fires stages high-to-low. Engine max thrust reads correctly at the current
+// conditions even for an unignited engine, so this yields a real liftoff-TWR input
+// on the pad. Returns 0 thrust / stage -1 when the craft carries no staged engine.
+func firstIgnitionThrust(engines []krpc.EngineInfo) (thrustN float64, stage int32, count int) {
+	stage = -1
+	for _, e := range engines {
+		if e.Stage > stage {
+			stage = e.Stage
+		}
+	}
+	if stage < 0 {
+		return 0, -1, 0
+	}
+	for _, e := range engines {
+		if e.Stage == stage {
+			thrustN += e.MaxThrustN
+			count++
+		}
+	}
+	return thrustN, stage, count
+}
 
 // ---- staging plan (pure) ----
 
@@ -210,6 +258,7 @@ type preflightOut struct {
 	base
 	Verdict    string         `json:"verdict,omitempty"` // GO | GO WITH NOTES | NO-GO
 	Situation  string         `json:"situation,omitempty"`
+	LiftoffTWR float64        `json:"liftoff_twr,omitempty"` // first-ignition-stage TWR at the current body/conditions
 	Checklist  []checkItem    `json:"checklist,omitempty"`
 	Parachutes []parachuteOut `json:"parachutes,omitempty"`
 	Notes      []string       `json:"notes,omitempty"` // honest per-section read errors, if any
@@ -257,6 +306,7 @@ func (s *kspServer) preflight() (preflightOut, error) {
 		return preflightOut{}, err
 	}
 
+	liftoffThrust, _, _ := firstIgnitionThrust(snap.Engines)
 	facts := preflightFacts{
 		Situation:         vs.Situation,
 		CrewCount:         len(names),
@@ -270,15 +320,18 @@ func (s *kspServer) preflight() (preflightOut, error) {
 		StageDVEstimateMS: astro.RocketEquationDV(d.VacuumSpecificImpulse, d.Mass, d.DryMass),
 		TWRFull:           astro.TWR(d.AvailableThrust, d.Mass, g),
 		Body:              fc.body,
+		LiftoffThrustN:    liftoffThrust,
+		LiftoffTWR:        astro.TWR(liftoffThrust, d.Mass, g),
 	}
 	items, verdict := evaluatePreflight(facts)
 
 	out := preflightOut{
-		base:      base{Available: true},
-		Verdict:   verdict,
-		Situation: vs.Situation,
-		Checklist: items,
-		Notes:     partsNotes(snap),
+		base:       base{Available: true},
+		Verdict:    verdict,
+		Situation:  vs.Situation,
+		Checklist:  items,
+		LiftoffTWR: round2(facts.LiftoffTWR),
+		Notes:      partsNotes(snap),
 	}
 	for _, p := range snap.Parachutes {
 		out.Parachutes = append(out.Parachutes, parachuteOut{
