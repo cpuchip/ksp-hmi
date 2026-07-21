@@ -48,6 +48,16 @@ First run downloads the Whisper model (`large-v3-turbo`) and the Kokoro voice �
 one-time wait. Then open **http://localhost:7862** on the same machine, allow the
 microphone, click connect, and talk. Talk over CAPCOM and it stops to listen (barge-in).
 
+### Wake word (optional)
+
+By default CAPCOM is always listening. To make it wait for its name, set
+`CAPCOM_WAKE_PHRASES=capcom, cap com` in `.env` (include `cap com` — Whisper sometimes
+splits the word). Then CAPCOM stays muted until it hears "CAPCOM", listens for
+`CAPCOM_WAKE_KEEPALIVE` seconds (default 20) so follow-ups don't need the wake word
+again, and mutes once you go quiet. It's a software gate after speech-to-text (Whisper
+still runs), not a hardware mic switch — fine for hands-busy flying, not a privacy
+control. The opening greeting is unaffected; CAPCOM still calls in when you connect.
+
 ### Prereqs
 
 - **loom serve** up with a `capcom` seat. On the reference host that's

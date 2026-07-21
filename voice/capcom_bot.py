@@ -123,6 +123,16 @@ STT_COMPUTE = os.getenv("CAPCOM_STT_COMPUTE", "float16")
 # try am_michael / am_adam (American male) or bm_george (British male) — see .env.example.
 TTS_VOICE = os.getenv("CAPCOM_TTS_VOICE", "af_heart")
 
+# Optional WAKE WORD. Set CAPCOM_WAKE_PHRASES to a comma-separated list (e.g.
+# "capcom, cap com") and CAPCOM stays muted until it hears one, then listens for
+# CAPCOM_WAKE_KEEPALIVE more seconds of follow-up before muting again — so you say
+# "CAPCOM" once, then talk freely. Empty (the default) = always listening, no gate.
+# The filter matches the transcription (whole words, flexible spacing), so it's a
+# software gate after STT, not a silent mic — Whisper still runs. "cap com" is worth
+# including because Whisper sometimes splits the word.
+WAKE_PHRASES = [p.strip() for p in os.getenv("CAPCOM_WAKE_PHRASES", "").split(",") if p.strip()]
+WAKE_KEEPALIVE = float(os.getenv("CAPCOM_WAKE_KEEPALIVE", "20"))
+
 # The persona lives in the SEAT (its CLAUDE.md). Sending it again here would
 # double-instruct — a one-line transport note is enough (see ai-hmi-jumpstart
 # PERSONA-TEMPLATE, "What to leave OUT").
@@ -196,17 +206,21 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
     )
 
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            stt,
-            user_aggregator,
-            llm,
-            tts,
-            transport.output(),
-            assistant_aggregator,
-        ]
-    )
+    # A wake word, when configured, gates transcriptions right after STT: nothing
+    # reaches the mind until CAPCOM hears its name, then it stays awake through the
+    # keepalive so follow-ups don't need repeating. The greeting is unaffected (it's
+    # a developer message, not a user transcription), so CAPCOM still calls in first.
+    processors = [transport.input(), stt]
+    if WAKE_PHRASES:
+        from pipecat.processors.filters import WakeCheckFilter
+
+        processors.append(
+            WakeCheckFilter(wake_phrases=WAKE_PHRASES, keepalive_timeout=WAKE_KEEPALIVE)
+        )
+        logger.info(f"Wake word active: {WAKE_PHRASES} (keepalive {WAKE_KEEPALIVE}s)")
+    processors += [user_aggregator, llm, tts, transport.output(), assistant_aggregator]
+
+    pipeline = Pipeline(processors)
 
     rtvi = RTVIProcessor()
     worker = PipelineWorker(
